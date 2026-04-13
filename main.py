@@ -148,7 +148,7 @@ def get_user(user_id: int):
     conn = db()
     row = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
-    return row  # (user_id, wallet, bank, bank_limit, total_earned, level, xp, streak, last_daily)
+    return row
 
 def add_wallet(user_id: int, amount: int):
     ensure_user(user_id)
@@ -279,10 +279,6 @@ def fmt_time(secs: float) -> str:
     if s < 3600: return f"{s//60}m {s%60}s"
     return f"{s//3600}h {(s%3600)//60}m"
 
-def echeck(interaction: discord.Interaction) -> bool:
-    """Returns False and sends a reply if user is banned."""
-    return not is_banned(interaction.user.id)
-
 # ══════════════════════════════════════════════════════════════════════════════
 # BOT EVENTS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -381,12 +377,7 @@ def admin_only():
     return app_commands.check(predicate)
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ███╗   ███╗███████╗███╗   ███╗██████╗ ███████╗██████╗
-#  ████╗ ████║██╔════╝████╗ ████║██╔══██╗██╔════╝██╔══██╗
-#  ██╔████╔██║█████╗  ██╔████╔██║██████╔╝█████╗  ██████╔╝
-#  ██║╚██╔╝██║██╔══╝  ██║╚██╔╝██║██╔══██╗██╔══╝  ██╔══██╗
-#  ██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║██████╔╝███████╗██║  ██║
-#  MEMBER COMMANDS
+# MEMBER COMMANDS
 # ══════════════════════════════════════════════════════════════════════════════
 
 @bot.tree.command(name="balance", description="Check your Sailor Coins balance")
@@ -403,8 +394,6 @@ async def balance(interaction: discord.Interaction, user: discord.Member = None)
     embed.add_field(name="📈 Total Earned",value=sc(data[4]), inline=True)
     embed.add_field(name="🔥 Daily Streak",value=f"{data[7]} days", inline=True)
     await interaction.response.send_message(embed=embed)
-
-# ─── /daily ──────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="daily", description="Claim your daily Sailor Coins reward")
 async def daily(interaction: discord.Interaction):
@@ -435,8 +424,6 @@ async def daily(interaction: discord.Interaction):
     embed.set_footer(text="Come back tomorrow to keep your streak!")
     await interaction.response.send_message(embed=embed)
 
-# ─── /weekly ─────────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="weekly", description="Claim your weekly bonus")
 async def weekly(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -451,8 +438,6 @@ async def weekly(interaction: discord.Interaction):
     set_cd(uid, "weekly")
     embed = discord.Embed(title="📅 Weekly Reward!", description=f"You claimed {sc(amount)}!", color=GOLD)
     await interaction.response.send_message(embed=embed)
-
-# ─── /fish ───────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="fish", description="Cast your line and fish for Sailor Coins")
 async def fish(interaction: discord.Interaction):
@@ -489,8 +474,6 @@ async def fish(interaction: discord.Interaction):
     if luck > 1: embed.set_footer(text=f"🍀 Luck x{luck:.1f} active!")
     await interaction.response.send_message(embed=embed)
 
-# ─── /mine ───────────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="mine", description="Descend into the mines for Sailor Coins")
 async def mine(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -522,8 +505,6 @@ async def mine(interaction: discord.Interaction):
     embed.add_field(name="You found", value=find[0], inline=True)
     embed.add_field(name="Earned",    value=sc(amount), inline=True)
     await interaction.response.send_message(embed=embed)
-
-# ─── /hunt ───────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="hunt", description="Hunt wild creatures for Sailor Coins")
 async def hunt(interaction: discord.Interaction):
@@ -557,8 +538,6 @@ async def hunt(interaction: discord.Interaction):
     embed.add_field(name="Earned",     value=sc(amount), inline=True)
     await interaction.response.send_message(embed=embed)
 
-# ─── /work ───────────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="work", description="Work a shift and earn honest Sailor Coins")
 async def work(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -590,8 +569,6 @@ async def work(interaction: discord.Interaction):
     embed.add_field(name="Salary", value=sc(amount), inline=True)
     await interaction.response.send_message(embed=embed)
 
-# ─── /crime ──────────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="crime", description="Commit a crime — high risk, high reward")
 async def crime(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -616,7 +593,6 @@ async def crime(interaction: discord.Interaction):
     act = random.choice(crimes)
     fail_chance = 0.35
     if "Escape Card" in inv and random.random() < fail_chance:
-        # Escape card saves you
         remove_inv(uid, "Escape Card", 1)
         embed = discord.Embed(title="🃏 Escape Card Used!", description="You got caught but used your Escape Card!", color=PURPLE)
         await interaction.response.send_message(embed=embed)
@@ -637,8 +613,6 @@ async def crime(interaction: discord.Interaction):
         embed.add_field(name="Result",  value=f"_{act[1]}_",          inline=False)
         embed.add_field(name="Looted",  value=sc(amount),             inline=False)
     await interaction.response.send_message(embed=embed)
-
-# ─── /beg ────────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="beg", description="Beg passers-by for Sailor Coins")
 async def beg(interaction: discord.Interaction):
@@ -668,8 +642,6 @@ async def beg(interaction: discord.Interaction):
         embed.add_field(name=s[0], value=f"gave you {sc(amount)}", inline=False)
     await interaction.response.send_message(embed=embed)
 
-# ─── /rob ────────────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="rob", description="Attempt to rob another user's wallet")
 @app_commands.describe(user="The user you want to rob")
 async def rob(interaction: discord.Interaction, user: discord.Member):
@@ -690,7 +662,6 @@ async def rob(interaction: discord.Interaction, user: discord.Member):
         return await interaction.response.send_message("❌ That person has nothing to steal!", ephemeral=True)
     set_cd(rid, "rob")
     v_inv = get_inv(vid)
-    # Shield check
     if "Shield" in v_inv:
         remove_inv(vid, "Shield", 1)
         fine = int(robber[1] * 0.10)
@@ -698,7 +669,6 @@ async def rob(interaction: discord.Interaction, user: discord.Member):
         embed = discord.Embed(title="🛡️ Shield Blocked You!", color=RED)
         embed.add_field(name="Fine Paid", value=sc(fine), inline=False)
         return await interaction.response.send_message(embed=embed)
-    # Lucky charm reduces success
     has_charm = "Lucky Charm" in v_inv
     success_chance = 0.38 if has_charm else 0.52
     if random.random() < success_chance:
@@ -718,8 +688,6 @@ async def rob(interaction: discord.Interaction, user: discord.Member):
         embed.add_field(name="Fine Paid to Victim", value=sc(fine), inline=False)
     await interaction.response.send_message(embed=embed)
 
-# ─── /bankrob ────────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="bankrob", description="Rob the bank — massive reward, massive risk")
 async def bankrob(interaction: discord.Interaction):
     uid = interaction.user.id
@@ -733,7 +701,6 @@ async def bankrob(interaction: discord.Interaction):
     if data[1] < 500:
         return await interaction.response.send_message("❌ You need ⚓ 500+ in your wallet to attempt this!", ephemeral=True)
     set_cd(uid, "bankrob")
-    # 28% success rate
     if random.random() < 0.28:
         loot = random.randint(2000, 8000)
         add_wallet(uid, loot)
@@ -746,8 +713,6 @@ async def bankrob(interaction: discord.Interaction):
         embed = discord.Embed(title="🚨 HEIST FAILED!", color=RED)
         embed.add_field(name="Arrested!", value=f"Fined {sc(penalty)}!", inline=False)
     await interaction.response.send_message(embed=embed)
-
-# ─── /gamble ─────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="gamble", description="Gamble your Sailor Coins")
 @app_commands.describe(amount="Amount to gamble, or 'all'")
@@ -780,8 +745,6 @@ async def gamble(interaction: discord.Interaction, amount: str):
         embed.add_field(name="Lost", value=sc(bet), inline=False)
     await interaction.response.send_message(embed=embed)
 
-# ─── /slots ──────────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="slots", description="Spin the slot machine")
 @app_commands.describe(amount="Amount to bet (min 10)")
 async def slots(interaction: discord.Interaction, amount: int):
@@ -813,8 +776,6 @@ async def slots(interaction: discord.Interaction, amount: int):
         embed = discord.Embed(title=f"🎰 No Match  {display}", description=f"Lost {sc(amount)}", color=RED)
     await interaction.response.send_message(embed=embed)
 
-# ─── /coinflip ───────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="coinflip", description="Flip a coin — double or nothing!")
 @app_commands.describe(amount="Bet amount", side="heads or tails")
 async def coinflip(interaction: discord.Interaction, amount: int, side: str):
@@ -841,8 +802,6 @@ async def coinflip(interaction: discord.Interaction, amount: int, side: str):
         embed.add_field(name="Lost", value=sc(amount), inline=False)
     embed.set_footer(text=f"You picked {side} | Result: {result}")
     await interaction.response.send_message(embed=embed)
-
-# ─── /deposit / /withdraw ─────────────────────────────────────────────────────
 
 @bot.tree.command(name="deposit", description="Deposit Sailor Coins into your bank")
 @app_commands.describe(amount="Amount to deposit, or 'all'")
@@ -876,8 +835,6 @@ async def withdraw(interaction: discord.Interaction, amount: str):
     embed.add_field(name="Amount", value=sc(wdr), inline=True)
     await interaction.response.send_message(embed=embed)
 
-# ─── /transfer ───────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="transfer", description="Send Sailor Coins to another user")
 @app_commands.describe(user="Recipient", amount="Amount to send")
 async def transfer(interaction: discord.Interaction, user: discord.Member, amount: int):
@@ -897,8 +854,6 @@ async def transfer(interaction: discord.Interaction, user: discord.Member, amoun
     embed.add_field(name="To",     value=user.mention, inline=True)
     embed.add_field(name="Amount", value=sc(amount),   inline=True)
     await interaction.response.send_message(embed=embed)
-
-# ─── /shop & /buy ────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="shop", description="Browse the Sailor Coins shop")
 async def shop(interaction: discord.Interaction):
@@ -955,8 +910,6 @@ async def buy(interaction: discord.Interaction, item: str):
         embed = discord.Embed(title=f"✅ {item_name} Purchased!", description=desc, color=GREEN)
     await interaction.response.send_message(embed=embed)
 
-# ─── /inventory ──────────────────────────────────────────────────────────────
-
 @bot.tree.command(name="inventory", description="View your inventory")
 async def inventory(interaction: discord.Interaction, user: discord.Member = None):
     target = user or interaction.user
@@ -968,8 +921,6 @@ async def inventory(interaction: discord.Interaction, user: discord.Member = Non
         for name, qty in items.items():
             embed.add_field(name=name, value=f"x{qty}", inline=True)
     await interaction.response.send_message(embed=embed)
-
-# ─── /leaderboard ────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="leaderboard", description="Top 10 richest sailors")
 async def leaderboard(interaction: discord.Interaction):
@@ -984,8 +935,6 @@ async def leaderboard(interaction: discord.Interaction):
         name = u.display_name if u else f"Unknown"
         embed.add_field(name=f"{m}  {name}", value=sc(total), inline=False)
     await interaction.response.send_message(embed=embed)
-
-# ─── /profile ────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="profile", description="View your sailor economy profile")
 async def profile(interaction: discord.Interaction, user: discord.Member = None):
@@ -1003,8 +952,6 @@ async def profile(interaction: discord.Interaction, user: discord.Member = None)
     embed.add_field(name="🏆 Total Earned", value=sc(data[4]),        inline=True)
     embed.add_field(name="🎒 Items Held",   value=str(len(items)),    inline=True)
     await interaction.response.send_message(embed=embed)
-
-# ─── /multipliers ────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="multipliers", description="View your active multipliers")
 async def multipliers(interaction: discord.Interaction):
@@ -1024,8 +971,6 @@ async def multipliers(interaction: discord.Interaction):
             remaining = expires_at - now
             embed.add_field(name=f"x{value:.1f} {mult_type.capitalize()}", value=f"Expires in {fmt_time(remaining)}", inline=True)
     await interaction.response.send_message(embed=embed)
-
-# ─── /highlow ────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="highlow", description="Guess if the next number is higher or lower")
 @app_commands.describe(amount="Bet amount", guess="higher or lower")
@@ -1053,8 +998,6 @@ async def highlow(interaction: discord.Interaction, amount: int, guess: str):
         embed = discord.Embed(title="❌ Wrong!", color=RED)
         embed.description = f"**{first}** → **{second}** | You guessed **{guess}** and lost {sc(amount)}."
     await interaction.response.send_message(embed=embed)
-
-# ─── /duel ───────────────────────────────────────────────────────────────────
 
 @bot.tree.command(name="duel", description="Challenge another user to a coin duel")
 @app_commands.describe(user="Opponent", amount="Wager amount")
@@ -1090,8 +1033,8 @@ async def duel(interaction: discord.Interaction, user: discord.Member, amount: i
         await interaction.followup.send(f"⌛ {user.mention} didn't respond. Duel cancelled.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  ADMIN COMMANDS
-# ══════════════════════════════════════════════════════════════════════════════
+# ADMIN COMMANDS
+# ══════════════════════════════════════════════��═══════════════════════════════
 
 @bot.tree.command(name="give", description="[ADMIN] Give Sailor Coins to a user")
 @app_commands.describe(user="Target user", amount="Amount to give")
