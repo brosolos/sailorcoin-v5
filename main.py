@@ -6,7 +6,7 @@ Required env vars:
   GUILD_ID       — your server ID (for faster slash command sync)
 
 Install deps:
-  pip install discord.py
+  pip install -r requirements.txt
 """
 
 import discord
@@ -17,8 +17,10 @@ import random
 import asyncio
 import os
 import time
+from dotenv import load_dotenv
 
-# ─── Config ───────────────────────────────────────────────────────────────────
+# Load environment variables
+load_dotenv()
 
 TOKEN    = os.environ.get("DISCORD_TOKEN")
 GUILD_ID = int(os.environ.get("GUILD_ID", 0))
@@ -292,7 +294,9 @@ async def on_ready():
         print(f"✅ Synced {len(synced)} slash commands.")
     except Exception as e:
         print(f"Sync error: {e}")
-    passive_drop.start()
+    
+    if not passive_drop.is_running():
+        passive_drop.start()
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -377,7 +381,7 @@ def admin_only():
     return app_commands.check(predicate)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MEMBER COMMANDS
+# MEMBER COMMANDS - ECONOMY
 # ══════════════════════════════════════════════════════════════════════════════
 
 @bot.tree.command(name="balance", description="Check your Sailor Coins balance")
@@ -427,7 +431,8 @@ async def daily(interaction: discord.Interaction):
 @bot.tree.command(name="weekly", description="Claim your weekly bonus")
 async def weekly(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "weekly", 604800)
     if on_cd:
         return await interaction.response.send_message(
@@ -439,10 +444,15 @@ async def weekly(interaction: discord.Interaction):
     embed = discord.Embed(title="📅 Weekly Reward!", description=f"You claimed {sc(amount)}!", color=GOLD)
     await interaction.response.send_message(embed=embed)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MEMBER COMMANDS - EARNING
+# ══════════════════════════════════════════════════════════════════════════════
+
 @bot.tree.command(name="fish", description="Cast your line and fish for Sailor Coins")
 async def fish(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "fish", 30)
     if on_cd:
         return await interaction.response.send_message(
@@ -471,13 +481,15 @@ async def fish(interaction: discord.Interaction):
     embed = discord.Embed(title="🎣 Fishing Results!", color=BLUE)
     embed.add_field(name="You caught", value=catch[0], inline=True)
     embed.add_field(name="Earned",     value=sc(amount) if amount else "Nothing 😢", inline=True)
-    if luck > 1: embed.set_footer(text=f"🍀 Luck x{luck:.1f} active!")
+    if luck > 1: 
+        embed.set_footer(text=f"🍀 Luck x{luck:.1f} active!")
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="mine", description="Descend into the mines for Sailor Coins")
 async def mine(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "mine", 45)
     if on_cd:
         return await interaction.response.send_message(
@@ -493,7 +505,7 @@ async def mine(interaction: discord.Interaction):
         ("🥇 Gold Nugget",     60,  150,  16),
         ("💎 Diamond",         150, 400,  9),
         ("🔮 Mystic Crystal",  300, 700,  6),
-        ("⚓ Sailor's Gem",    600, 1200, 2),
+        ("⚓ Sailor's Gem",     600, 1200, 2),
         ("🌟 Ancient Artifact",900, 2500, 1),
     ]
     weights = [f[3] * luck for f in finds]
@@ -509,7 +521,8 @@ async def mine(interaction: discord.Interaction):
 @bot.tree.command(name="hunt", description="Hunt wild creatures for Sailor Coins")
 async def hunt(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "hunt", 60)
     if on_cd:
         return await interaction.response.send_message(
@@ -541,7 +554,8 @@ async def hunt(interaction: discord.Interaction):
 @bot.tree.command(name="work", description="Work a shift and earn honest Sailor Coins")
 async def work(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "work", 3600)
     if on_cd:
         return await interaction.response.send_message(
@@ -555,7 +569,7 @@ async def work(interaction: discord.Interaction):
         ("🧑‍💻 Navigator",           180, 400),
         ("🏴‍☠️ Pirate Lookout",      130, 320),
         ("🎣 Pro Fisherman",         90,  230),
-        ("⚓ Dock Worker",          80,  210),
+        ("⚓ Dock Worker",            80,  210),
         ("🗺️ Cartographer",         160, 380),
         ("🦜 Parrot Trainer",       70,  180),
         ("💣 Cannon Operator",      200, 420),
@@ -572,7 +586,8 @@ async def work(interaction: discord.Interaction):
 @bot.tree.command(name="crime", description="Commit a crime — high risk, high reward")
 async def crime(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "crime", 7200)
     if on_cd:
         return await interaction.response.send_message(
@@ -617,7 +632,8 @@ async def crime(interaction: discord.Interaction):
 @bot.tree.command(name="beg", description="Beg passers-by for Sailor Coins")
 async def beg(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "beg", 300)
     if on_cd:
         return await interaction.response.send_message(
@@ -642,13 +658,19 @@ async def beg(interaction: discord.Interaction):
         embed.add_field(name=s[0], value=f"gave you {sc(amount)}", inline=False)
     await interaction.response.send_message(embed=embed)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MEMBER COMMANDS - PVP
+# ══════════════════════════════════════════════════════════════════════════════
+
 @bot.tree.command(name="rob", description="Attempt to rob another user's wallet")
 @app_commands.describe(user="The user you want to rob")
 async def rob(interaction: discord.Interaction, user: discord.Member):
     rid = interaction.user.id
     vid = user.id
-    if is_banned(rid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
-    if user.bot or rid == vid: return await interaction.response.send_message("❌ Invalid target!", ephemeral=True)
+    if is_banned(rid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if user.bot or rid == vid: 
+        return await interaction.response.send_message("❌ Invalid target!", ephemeral=True)
     on_cd, rem = check_cd(rid, "rob", 3600)
     if on_cd:
         return await interaction.response.send_message(
@@ -691,7 +713,8 @@ async def rob(interaction: discord.Interaction, user: discord.Member):
 @bot.tree.command(name="bankrob", description="Rob the bank — massive reward, massive risk")
 async def bankrob(interaction: discord.Interaction):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "bankrob", 14400)
     if on_cd:
         return await interaction.response.send_message(
@@ -714,17 +737,24 @@ async def bankrob(interaction: discord.Interaction):
         embed.add_field(name="Arrested!", value=f"Fined {sc(penalty)}!", inline=False)
     await interaction.response.send_message(embed=embed)
 
+# ═════════════════════════════���════════════════════════════════════════════════
+# MEMBER COMMANDS - GAMES
+# ══════════════════════════════════════════════════════════════════════════════
+
 @bot.tree.command(name="gamble", description="Gamble your Sailor Coins")
 @app_commands.describe(amount="Amount to gamble, or 'all'")
 async def gamble(interaction: discord.Interaction, amount: str):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     data = get_user(uid)
     if amount.lower() == "all":
         bet = data[1]
     else:
-        try: bet = int(amount)
-        except: return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
+        try: 
+            bet = int(amount)
+        except: 
+            return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
     if bet < 10 or bet > data[1]:
         return await interaction.response.send_message("❌ Invalid bet (min ⚓ 10).", ephemeral=True)
     on_cd, rem = check_cd(uid, "gamble", 12)
@@ -749,7 +779,8 @@ async def gamble(interaction: discord.Interaction, amount: str):
 @app_commands.describe(amount="Amount to bet (min 10)")
 async def slots(interaction: discord.Interaction, amount: int):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     data = get_user(uid)
     if amount < 10 or amount > data[1]:
         return await interaction.response.send_message("❌ Invalid bet.", ephemeral=True)
@@ -780,7 +811,8 @@ async def slots(interaction: discord.Interaction, amount: int):
 @app_commands.describe(amount="Bet amount", side="heads or tails")
 async def coinflip(interaction: discord.Interaction, amount: int, side: str):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     if side.lower() not in ("heads","tails"):
         return await interaction.response.send_message("❌ Pick 'heads' or 'tails'.", ephemeral=True)
     data = get_user(uid)
@@ -802,6 +834,73 @@ async def coinflip(interaction: discord.Interaction, amount: int, side: str):
         embed.add_field(name="Lost", value=sc(amount), inline=False)
     embed.set_footer(text=f"You picked {side} | Result: {result}")
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="highlow", description="Guess if the next number is higher or lower")
+@app_commands.describe(amount="Bet amount", guess="higher or lower")
+async def highlow(interaction: discord.Interaction, amount: int, guess: str):
+    uid = interaction.user.id
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if guess.lower() not in ("higher","lower"):
+        return await interaction.response.send_message("❌ Guess 'higher' or 'lower'.", ephemeral=True)
+    data = get_user(uid)
+    if amount < 10 or amount > data[1]:
+        return await interaction.response.send_message("❌ Invalid bet.", ephemeral=True)
+    on_cd, rem = check_cd(uid, "highlow", 10)
+    if on_cd:
+        return await interaction.response.send_message(f"⏳ Wait **{fmt_time(rem)}**", ephemeral=True)
+    set_cd(uid, "highlow")
+    first  = random.randint(1, 10)
+    second = random.randint(1, 10)
+    correct = (guess.lower()=="higher" and second>first) or (guess.lower()=="lower" and second<first)
+    if correct:
+        add_wallet(uid, amount)
+        embed = discord.Embed(title="✅ Correct!", color=GREEN)
+        embed.description = f"**{first}** → **{second}** | You guessed **{guess}** and won {sc(amount)}!"
+    else:
+        add_wallet(uid, -amount)
+        embed = discord.Embed(title="❌ Wrong!", color=RED)
+        embed.description = f"**{first}** → **{second}** | You guessed **{guess}** and lost {sc(amount)}."
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="duel", description="Challenge another user to a coin duel")
+@app_commands.describe(user="Opponent", amount="Wager amount")
+async def duel(interaction: discord.Interaction, user: discord.Member, amount: int):
+    cid, oid = interaction.user.id, user.id
+    if is_banned(cid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if user.bot or cid==oid: 
+        return await interaction.response.send_message("❌ Invalid opponent.", ephemeral=True)
+    cd = get_user(cid)
+    od = get_user(oid)
+    if amount < 10 or amount > cd[1]:
+        return await interaction.response.send_message("❌ Invalid wager.", ephemeral=True)
+    if amount > od[1]:
+        return await interaction.response.send_message("❌ Opponent doesn't have enough coins.", ephemeral=True)
+    embed = discord.Embed(title="⚔️ Duel Challenge!",
+                          description=f"{interaction.user.mention} challenges {user.mention} to a duel for {sc(amount)}!\n{user.mention}, reply with `accept` or `decline`.",
+                          color=GOLD)
+    await interaction.response.send_message(embed=embed)
+    def check(m): return m.author==user and m.channel==interaction.channel and m.content.lower() in ("accept","decline")
+    try:
+        resp = await bot.wait_for("message", check=check, timeout=30.0)
+        if resp.content.lower()=="decline":
+            return await interaction.followup.send(f"❌ {user.mention} declined the duel.")
+        winner = random.choice([interaction.user, user])
+        loser  = user if winner==interaction.user else interaction.user
+        add_wallet(winner.id, amount)
+        add_wallet(loser.id, -amount)
+        await interaction.followup.send(embed=discord.Embed(
+            title="⚔️ Duel Result!",
+            description=f"**{winner.mention}** wins {sc(amount)}! Better luck next time, {loser.mention}!",
+            color=GREEN
+        ))
+    except asyncio.TimeoutError:
+        await interaction.followup.send(f"⌛ {user.mention} didn't respond. Duel cancelled.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MEMBER COMMANDS - BANK & TRANSFER
+# ══════════════════════════════════════════════════════════════════════════════
 
 @bot.tree.command(name="deposit", description="Deposit Sailor Coins into your bank")
 @app_commands.describe(amount="Amount to deposit, or 'all'")
@@ -839,8 +938,10 @@ async def withdraw(interaction: discord.Interaction, amount: str):
 @app_commands.describe(user="Recipient", amount="Amount to send")
 async def transfer(interaction: discord.Interaction, user: discord.Member, amount: int):
     sid, rid = interaction.user.id, user.id
-    if is_banned(sid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
-    if user.bot or sid==rid: return await interaction.response.send_message("❌ Invalid recipient.", ephemeral=True)
+    if is_banned(sid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if user.bot or sid==rid: 
+        return await interaction.response.send_message("❌ Invalid recipient.", ephemeral=True)
     data = get_user(sid)
     if amount <= 0 or amount > data[1]:
         return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
@@ -854,6 +955,10 @@ async def transfer(interaction: discord.Interaction, user: discord.Member, amoun
     embed.add_field(name="To",     value=user.mention, inline=True)
     embed.add_field(name="Amount", value=sc(amount),   inline=True)
     await interaction.response.send_message(embed=embed)
+
+# ═════════════════════════════════════════════════════��════════════════════════
+# MEMBER COMMANDS - SHOP & INVENTORY
+# ══════════════════════════════════════════════════════════════════════════════
 
 @bot.tree.command(name="shop", description="Browse the Sailor Coins shop")
 async def shop(interaction: discord.Interaction):
@@ -869,7 +974,8 @@ async def shop(interaction: discord.Interaction):
 @app_commands.describe(item="Item name (from /shop)")
 async def buy(interaction: discord.Interaction, item: str):
     uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    if is_banned(uid): 
+        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     conn = db()
     row  = conn.execute("SELECT * FROM shop WHERE LOWER(item_name)=LOWER(?)", (item,)).fetchone()
     conn.close()
@@ -922,6 +1028,10 @@ async def inventory(interaction: discord.Interaction, user: discord.Member = Non
             embed.add_field(name=name, value=f"x{qty}", inline=True)
     await interaction.response.send_message(embed=embed)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MEMBER COMMANDS - INFO
+# ══════════════════════════════════════════════════════════════════════════════
+
 @bot.tree.command(name="leaderboard", description="Top 10 richest sailors")
 async def leaderboard(interaction: discord.Interaction):
     conn = db()
@@ -932,7 +1042,7 @@ async def leaderboard(interaction: discord.Interaction):
     for i, (uid, total) in enumerate(rows):
         m    = medals[i] if i<3 else f"`#{i+1}`"
         u    = interaction.guild.get_member(uid)
-        name = u.display_name if u else f"Unknown"
+        name = u.display_name if u else "Unknown"
         embed.add_field(name=f"{m}  {name}", value=sc(total), inline=False)
     await interaction.response.send_message(embed=embed)
 
@@ -972,69 +1082,9 @@ async def multipliers(interaction: discord.Interaction):
             embed.add_field(name=f"x{value:.1f} {mult_type.capitalize()}", value=f"Expires in {fmt_time(remaining)}", inline=True)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="highlow", description="Guess if the next number is higher or lower")
-@app_commands.describe(amount="Bet amount", guess="higher or lower")
-async def highlow(interaction: discord.Interaction, amount: int, guess: str):
-    uid = interaction.user.id
-    if is_banned(uid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
-    if guess.lower() not in ("higher","lower"):
-        return await interaction.response.send_message("❌ Guess 'higher' or 'lower'.", ephemeral=True)
-    data = get_user(uid)
-    if amount < 10 or amount > data[1]:
-        return await interaction.response.send_message("❌ Invalid bet.", ephemeral=True)
-    on_cd, rem = check_cd(uid, "highlow", 10)
-    if on_cd:
-        return await interaction.response.send_message(f"⏳ Wait **{fmt_time(rem)}**", ephemeral=True)
-    set_cd(uid, "highlow")
-    first  = random.randint(1, 10)
-    second = random.randint(1, 10)
-    correct = (guess.lower()=="higher" and second>first) or (guess.lower()=="lower" and second<first)
-    if correct:
-        add_wallet(uid, amount)
-        embed = discord.Embed(title="✅ Correct!", color=GREEN)
-        embed.description = f"**{first}** → **{second}** | You guessed **{guess}** and won {sc(amount)}!"
-    else:
-        add_wallet(uid, -amount)
-        embed = discord.Embed(title="❌ Wrong!", color=RED)
-        embed.description = f"**{first}** → **{second}** | You guessed **{guess}** and lost {sc(amount)}."
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="duel", description="Challenge another user to a coin duel")
-@app_commands.describe(user="Opponent", amount="Wager amount")
-async def duel(interaction: discord.Interaction, user: discord.Member, amount: int):
-    cid, oid = interaction.user.id, user.id
-    if is_banned(cid): return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
-    if user.bot or cid==oid: return await interaction.response.send_message("❌ Invalid opponent.", ephemeral=True)
-    cd = get_user(cid)
-    od = get_user(oid)
-    if amount < 10 or amount > cd[1]:
-        return await interaction.response.send_message("❌ Invalid wager.", ephemeral=True)
-    if amount > od[1]:
-        return await interaction.response.send_message("❌ Opponent doesn't have enough coins.", ephemeral=True)
-    embed = discord.Embed(title="⚔️ Duel Challenge!",
-                          description=f"{interaction.user.mention} challenges {user.mention} to a duel for {sc(amount)}!\n{user.mention}, reply with `accept` or `decline`.",
-                          color=GOLD)
-    await interaction.response.send_message(embed=embed)
-    def check(m): return m.author==user and m.channel==interaction.channel and m.content.lower() in ("accept","decline")
-    try:
-        resp = await bot.wait_for("message", check=check, timeout=30.0)
-        if resp.content.lower()=="decline":
-            return await interaction.followup.send(f"❌ {user.mention} declined the duel.")
-        winner = random.choice([interaction.user, user])
-        loser  = user if winner==interaction.user else interaction.user
-        add_wallet(winner.id, amount)
-        add_wallet(loser.id, -amount)
-        await interaction.followup.send(embed=discord.Embed(
-            title="⚔️ Duel Result!",
-            description=f"**{winner.mention}** wins {sc(amount)}! Better luck next time, {loser.mention}!",
-            color=GREEN
-        ))
-    except asyncio.TimeoutError:
-        await interaction.followup.send(f"⌛ {user.mention} didn't respond. Duel cancelled.")
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN COMMANDS
-# ══════════════════════════════════════════════��═══════════════════════════════
+# ════════════════════��═════════════════════════════════════════════════════════
 
 @bot.tree.command(name="give", description="[ADMIN] Give Sailor Coins to a user")
 @app_commands.describe(user="Target user", amount="Amount to give")
@@ -1092,7 +1142,9 @@ async def dropconfig(interaction: discord.Interaction, min_amount: int = None, m
     if interval_minutes and interval_minutes >= 5:
         set_cfg("drop_interval_minutes", str(interval_minutes))
         passive_drop.change_interval(minutes=interval_minutes)
-    mn = get_cfg("drop_min","100");  mx = get_cfg("drop_max","500");  iv = get_cfg("drop_interval_minutes","30")
+    mn = get_cfg("drop_min","100")
+    mx = get_cfg("drop_max","500")
+    iv = get_cfg("drop_interval_minutes","30")
     await interaction.response.send_message(
         f"✅ Drop config: min=**{mn}** max=**{mx}** every=**{iv} min**", ephemeral=True
     )
@@ -1271,7 +1323,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     except Exception:
         await interaction.followup.send(msg, ephemeral=True)
 
-# ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════��═══════════
 # ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
