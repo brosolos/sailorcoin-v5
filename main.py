@@ -1,16 +1,23 @@
 """
-⚓ SAILOR COINS — Discord Economy Bot
+⚓ SAILOR COINS — Discord Economy Bot v2
 =====================================
+Features:
+  - 60+ Interactive Commands with images
+  - Invite Tracking & Rewards
+  - Interactive Shop GUI with buttons
+  - Multipliers & boosters
+  - Mini-games with visual embeds
+  - Level system with rewards
+  - Passive income & drops
+  - Admin dashboard
+
 Required env vars:
   DISCORD_TOKEN  — your bot token
-  GUILD_ID       — your server ID (for faster slash command sync)
-
-Install deps:
-  pip install -r requirements.txt
+  GUILD_ID       — your server ID
 """
 
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands, tasks
 import sqlite3
 import random
@@ -18,6 +25,7 @@ import asyncio
 import os
 import time
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -33,16 +41,32 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ─── Colors ───────────────────────────────────────────────────────────────────
+# ─── Colors ──────────��────────────────────────────────────────────────────────
 
 GOLD   = 0xFFD700
 RED    = 0xFF4444
 GREEN  = 0x44FF88
 BLUE   = 0x4488FF
 PURPLE = 0xAA44FF
+ORANGE = 0xFF8C00
+
+# ─── Emotes & Images ──────────────────────────────────────────────────────────
+
+EMOTES = {
+    "coin": "⚓",
+    "level": "⭐",
+    "xp": "✨",
+    "streak": "🔥",
+    "luck": "🍀",
+    "boost": "🚀",
+    "warning": "⚠️",
+    "success": "✅",
+    "fail": "❌",
+    "clock": "���",
+}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DATABASE
+# DATABASE - ENHANCED
 # ══════════════════════════════════════════════════════════════════════════════
 
 def init_db():
@@ -58,7 +82,9 @@ def init_db():
         level        INTEGER DEFAULT 1,
         xp           INTEGER DEFAULT 0,
         streak       INTEGER DEFAULT 0,
-        last_daily   REAL    DEFAULT 0
+        last_daily   REAL    DEFAULT 0,
+        invites      INTEGER DEFAULT 0,
+        invite_rewards INTEGER DEFAULT 0
     )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS cooldowns (
@@ -80,7 +106,8 @@ def init_db():
         price       INTEGER,
         description TEXT,
         item_type   TEXT,
-        value       TEXT
+        value       TEXT,
+        emoji       TEXT DEFAULT "⚓"
     )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS config (
@@ -108,28 +135,40 @@ def init_db():
         timestamp REAL
     )""")
 
-    # Default shop items
+    c.execute("""CREATE TABLE IF NOT EXISTS invites (
+        inviter_id   INTEGER,
+        invitee_id   INTEGER,
+        invite_date  REAL,
+        PRIMARY KEY (inviter_id, invitee_id)
+    )""")
+
+    # Default shop items with emojis
     defaults = [
-        ("2x Coin Boost",       5000,  "Double coin earnings for 1 hour",              "multiplier", "coins:2.0:3600"),
-        ("2x Luck Charm",       3000,  "Double luck in fish/mine/hunt for 1 hour",      "multiplier", "luck:2.0:3600"),
-        ("3x Coin Boost",       12000, "Triple coin earnings for 30 minutes",           "multiplier", "coins:3.0:1800"),
-        ("Fishing Rod+",        2000,  "Catch bigger fish — 1.5x fishing yield",        "upgrade",    "fishing:1.5"),
-        ("Diamond Pickaxe",     2000,  "Mine richer veins — 1.5x mining yield",         "upgrade",    "mining:1.5"),
-        ("Hunter's Bow",        2000,  "Hunt bigger prey — 1.5x hunting yield",         "upgrade",    "hunting:1.5"),
-        ("Bank Expansion",      10000, "Increase bank limit by +5000",                  "bank",       "5000"),
-        ("VIP Role",            25000, "Receive the VIP role in the server",            "role",       "VIP"),
-        ("Lucky Charm",         1500,  "Reduces your robbery chance for 24 hours",      "protection", "rob:0.5:86400"),
-        ("Shield",              500,   "One-time full protection from robbery",         "protection", "rob_shield:1"),
-        ("Escape Card",         3000,  "Escape from being caught during a crime once",  "protection", "crime_escape:1"),
-        ("Daily Boost",         2000,  "2x daily reward for the next 3 days",           "multiplier", "daily:2.0:259200"),
+        ("2x Coin Boost",       5000,  "Double coin earnings for 1 hour",              "multiplier", "coins:2.0:3600", "💰"),
+        ("2x Luck Charm",       3000,  "Double luck in fish/mine/hunt for 1 hour",      "multiplier", "luck:2.0:3600", "🍀"),
+        ("3x Coin Boost",       12000, "Triple coin earnings for 30 minutes",           "multiplier", "coins:3.0:1800", "🚀"),
+        ("4x Ultra Boost",      25000, "4x earnings for 15 minutes",                    "multiplier", "coins:4.0:900", "⚡"),
+        ("Fishing Rod+",        2000,  "Catch bigger fish — 1.5x fishing yield",        "upgrade",    "fishing:1.5", "🎣"),
+        ("Diamond Pickaxe",     2000,  "Mine richer veins — 1.5x mining yield",         "upgrade",    "mining:1.5", "⛏️"),
+        ("Hunter's Bow",        2000,  "Hunt bigger prey — 1.5x hunting yield",         "upgrade",    "hunting:1.5", "🏹"),
+        ("Bank Expansion",      10000, "Increase bank limit by +5000",                  "bank",       "5000", "🏦"),
+        ("VIP Role",            25000, "Receive the VIP role in the server",            "role",       "VIP", "👑"),
+        ("Lucky Charm",         1500,  "Reduces your robbery chance for 24 hours",      "protection", "rob:0.5:86400", "🧿"),
+        ("Shield",              500,   "One-time full protection from robbery",         "protection", "rob_shield:1", "🛡️"),
+        ("Escape Card",         3000,  "Escape from being caught during a crime once",  "protection", "crime_escape:1", "🃏"),
+        ("Daily Boost",         2000,  "2x daily reward for the next 3 days",           "multiplier", "daily:2.0:259200", "📅"),
+        ("Mystery Box",         7500,  "Random reward: 5000-15000 coins!",              "mystery",    "5000:15000", "🎁"),
+        ("Prestige Token",      50000, "Unlock prestige level & special perks",         "prestige",   "1", "👑"),
     ]
     for item in defaults:
-        c.execute("INSERT OR IGNORE INTO shop VALUES (?,?,?,?,?)", item)
+        c.execute("INSERT OR IGNORE INTO shop VALUES (?,?,?,?,?,?)", item)
 
     # Default config
     c.execute("INSERT OR IGNORE INTO config VALUES ('drop_interval_minutes','30')")
     c.execute("INSERT OR IGNORE INTO config VALUES ('drop_min','100')")
     c.execute("INSERT OR IGNORE INTO config VALUES ('drop_max','500')")
+    c.execute("INSERT OR IGNORE INTO config VALUES ('invite_reward','500')")
+    c.execute("INSERT OR IGNORE INTO config VALUES ('shop_channel','')")
 
     conn.commit()
     conn.close()
@@ -152,14 +191,14 @@ def get_user(user_id: int):
     conn.close()
     return row
 
-def add_wallet(user_id: int, amount: int):
+def add_wallet(user_id: int, amount: int, reason: str = "earn"):
     ensure_user(user_id)
     conn = db()
     conn.execute("UPDATE users SET wallet=wallet+? WHERE user_id=?", (amount, user_id))
     if amount > 0:
         conn.execute("UPDATE users SET total_earned=total_earned+? WHERE user_id=?", (amount, user_id))
         conn.execute("INSERT INTO transactions(user_id,amount,reason,timestamp) VALUES(?,?,?,?)",
-                     (user_id, amount, "earn", time.time()))
+                     (user_id, amount, reason, time.time()))
     conn.commit()
     conn.close()
 
@@ -227,12 +266,6 @@ def set_cd(user_id: int, cmd: str):
     conn.commit()
     conn.close()
 
-def reset_all_cd(user_id: int):
-    conn = db()
-    conn.execute("DELETE FROM cooldowns WHERE user_id=?", (user_id,))
-    conn.commit()
-    conn.close()
-
 def check_cd(user_id: int, cmd: str, secs: int):
     """Returns (on_cooldown: bool, remaining: float)"""
     elapsed = time.time() - get_cd(user_id, cmd)
@@ -270,6 +303,14 @@ def remove_inv(user_id: int, item: str, qty: int = 1) -> bool:
     conn.close()
     return True
 
+def record_invite(inviter_id: int, invitee_id: int):
+    """Record an invite and reward the inviter"""
+    conn = db()
+    conn.execute("INSERT OR IGNORE INTO invites VALUES(?,?,?)", (inviter_id, invitee_id, time.time()))
+    conn.execute("UPDATE users SET invites=invites+1 WHERE user_id=?", (inviter_id,))
+    conn.commit()
+    conn.close()
+
 # ─── Formatting helpers ───────────────────────────────────────────────────────
 
 def sc(amount: int) -> str:
@@ -282,13 +323,162 @@ def fmt_time(secs: float) -> str:
     return f"{s//3600}h {(s%3600)//60}m"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BOT EVENTS
+# INTERACTIVE SHOP BUTTONS
 # ══════════════════════════════════════════════════════════════════════════════
+
+class ShopButton(ui.Button):
+    def __init__(self, item_name: str, price: int, emoji: str):
+        super().__init__(label=f"{item_name} ({price})", emoji=emoji, style=discord.ButtonStyle.primary)
+        self.item_name = item_name
+        self.price = price
+
+    async def callback(self, interaction: discord.Interaction):
+        uid = interaction.user.id
+        if is_banned(uid):
+            return await interaction.response.send_message("❌ You're economy banned.", ephemeral=True)
+        
+        data = get_user(uid)
+        if data[1] < self.price:
+            embed = discord.Embed(
+                title="❌ Insufficient Coins",
+                description=f"Need: {sc(self.price)}\nYou have: {sc(data[1])}",
+                color=RED
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        # Process purchase
+        conn = db()
+        row = conn.execute("SELECT * FROM shop WHERE item_name=?", (self.item_name,)).fetchone()
+        conn.close()
+        
+        if not row:
+            return await interaction.response.send_message("❌ Item not found.", ephemeral=True)
+        
+        item_name, price, desc, item_type, value, emoji = row
+        add_wallet(uid, -price)
+        
+        if item_type == "multiplier":
+            parts = value.split(":")
+            set_mult(uid, parts[0], float(parts[1]), int(parts[2]))
+            embed = discord.Embed(
+                title=f"✅ {emoji} {item_name} Activated!",
+                description=f"**x{parts[1]} {parts[0]}** active for **{fmt_time(int(parts[2]))}**!",
+                color=GREEN
+            )
+        elif item_type == "upgrade":
+            add_inv(uid, item_name)
+            embed = discord.Embed(
+                title=f"✅ {emoji} {item_name} Equipped!",
+                description=desc,
+                color=GREEN
+            )
+        elif item_type == "bank":
+            extra = int(value)
+            conn = db()
+            conn.execute("UPDATE users SET bank_limit=bank_limit+? WHERE user_id=?", (extra, uid))
+            conn.commit()
+            conn.close()
+            embed = discord.Embed(
+                title=f"✅ {emoji} Bank Expanded!",
+                description=f"Limit increased by {sc(extra)}!",
+                color=GREEN
+            )
+        elif item_type == "mystery":
+            parts = value.split(":")
+            reward = random.randint(int(parts[0]), int(parts[1]))
+            add_wallet(uid, reward)
+            embed = discord.Embed(
+                title=f"✅ {emoji} Mystery Box Opened!",
+                description=f"You found {sc(reward)}! 🎉",
+                color=GOLD
+            )
+        elif item_type == "role":
+            role = discord.utils.get(interaction.guild.roles, name=value)
+            if role:
+                await interaction.user.add_roles(role)
+                embed = discord.Embed(
+                    title=f"✅ {emoji} Role Granted!",
+                    description=f"You now have the **{value}** role!",
+                    color=GREEN
+                )
+            else:
+                add_wallet(uid, price)
+                embed = discord.Embed(
+                    title="❌ Role Not Found",
+                    description="Refunded!",
+                    color=RED
+                )
+        else:
+            add_inv(uid, item_name)
+            embed = discord.Embed(
+                title=f"✅ {emoji} {item_name} Purchased!",
+                description=desc,
+                color=GREEN
+            )
+        
+        embed.set_footer(text=f"Balance: {sc(data[1] - price)}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class ShopView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        
+        # Get all shop items
+        conn = db()
+        items = conn.execute("SELECT item_name, price, emoji FROM shop ORDER BY price").fetchall()
+        conn.close()
+        
+        for item_name, price, emoji in items:
+            button = ShopButton(item_name, price, emoji)
+            self.add_item(button)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INVITE TRACKING
+# ══════════════════════════════════════════════════════════════════════════════
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    """Track invites when a member joins"""
+    if member.bot:
+        return
+    
+    try:
+        invites_before = getattr(bot, f"invites_{member.guild.id}", {})
+        invites_after = {invite.inviter.id: invite.uses async for invite in await member.guild.invites()}
+        
+        for inviter_id, uses in invites_after.items():
+            if inviter_id in invites_before and uses > invites_before[inviter_id]:
+                record_invite(inviter_id, member.id)
+                reward = int(get_cfg("invite_reward", "500"))
+                add_wallet(inviter_id, reward, "invite")
+                
+                embed = discord.Embed(
+                    title="🎉 New Member Invited!",
+                    description=f"<@{inviter_id}> invited <@{member.id}>!\n\nReward: {sc(reward)}",
+                    color=GOLD
+                )
+                try:
+                    await member.guild.system_channel.send(embed=embed)
+                except:
+                    pass
+        
+        bot.invites_cache = {member.guild.id: invites_after}
+    except Exception as e:
+        print(f"Invite tracking error: {e}")
 
 @bot.event
 async def on_ready():
     print(f"⚓ {bot.user} is online!")
     init_db()
+    
+    # Cache invites
+    for guild in bot.guilds:
+        try:
+            invites = {invite.inviter.id: invite.uses async for invite in await guild.invites()}
+            bot.invites_cache = {guild.id: invites}
+        except:
+            pass
+    
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash commands.")
@@ -307,7 +497,7 @@ async def on_message(message: discord.Message):
     if not on_cd:
         mult = get_mult(uid, "coins")
         reward = int(random.randint(2, 8) * mult)
-        add_wallet(uid, reward)
+        add_wallet(uid, reward, "chat")
         set_cd(uid, "chat_reward")
         # XP + level-up
         conn = db()
@@ -321,11 +511,12 @@ async def on_message(message: discord.Message):
             try:
                 lvl_embed = discord.Embed(
                     title="🎉 Level Up!",
-                    description=f"{message.author.mention} reached **Level {row[1]+1}**! Here's {sc(row[1]*50)} as a reward!",
+                    description=f"{message.author.mention} reached **Level {row[1]+1}**!\n\n🎁 Reward: {sc(row[1]*50)}",
                     color=GOLD
                 )
-                add_wallet(uid, row[1] * 50)
-                await message.channel.send(embed=lvl_embed, delete_after=10)
+                lvl_embed.set_thumbnail(url=message.author.display_avatar.url)
+                add_wallet(uid, row[1] * 50, "level_up")
+                await message.channel.send(embed=lvl_embed, delete_after=15)
             except Exception:
                 pass
         else:
@@ -348,40 +539,45 @@ async def passive_drop():
     mn  = int(get_cfg("drop_min", "100"))
     mx  = int(get_cfg("drop_max", "500"))
     amount = random.randint(mn, mx)
+    
     embed = discord.Embed(
         title="⚓ Treasure Washed Ashore!",
-        description=f"A chest containing **{sc(amount)}** has appeared!\nType `!claim` to grab it — first come, first served!",
+        description=f"A chest containing **{sc(amount)}** has appeared!",
         color=GOLD
     )
-    embed.set_footer(text="You have 60 seconds!")
+    embed.add_field(name="How to Claim", value="Type `!claim` to grab it — first come, first served!", inline=False)
+    embed.set_footer(text="⏳ You have 60 seconds!")
+    
     await channel.send(embed=embed)
     def check(m): return m.channel == channel and not m.author.bot and m.content.lower() == "!claim"
     try:
         resp = await bot.wait_for("message", check=check, timeout=60.0)
-        add_wallet(resp.author.id, amount)
-        await channel.send(embed=discord.Embed(
+        add_wallet(resp.author.id, amount, "treasure_drop")
+        embed = discord.Embed(
             title="🎉 Chest Claimed!",
             description=f"{resp.author.mention} snatched {sc(amount)}!",
             color=GREEN
-        ))
+        )
+        await channel.send(embed=embed)
     except asyncio.TimeoutError:
-        await channel.send(embed=discord.Embed(
+        embed = discord.Embed(
             title="🌊 Chest Sank",
             description="Nobody claimed the chest in time... it sank.",
             color=RED
-        ))
+        )
+        await channel.send(embed=embed)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ADMIN PERMISSION CHECK
-# ══════════════════════════════════════════════════════════════════════════════
+# ══��═══════════════════════════════════════════════════════════════════════════
 
 def admin_only():
     async def predicate(interaction: discord.Interaction) -> bool:
         return interaction.user.guild_permissions.administrator
     return app_commands.check(predicate)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MEMBER COMMANDS - ECONOMY
+# ═══════════════════════════════════════════════════════════��══════════════════
+# MEMBER COMMANDS - ECONOMY (Basic)
 # ══════════════════════════════════════════════════════════════════════════════
 
 @bot.tree.command(name="balance", description="Check your Sailor Coins balance")
@@ -389,14 +585,26 @@ def admin_only():
 async def balance(interaction: discord.Interaction, user: discord.Member = None):
     target = user or interaction.user
     data = get_user(target.id)
-    embed = discord.Embed(title=f"⚓ {target.display_name}'s Wallet", color=GOLD)
+    
+    embed = discord.Embed(
+        title=f"⚓ {target.display_name}'s Wallet",
+        color=GOLD
+    )
     embed.set_thumbnail(url=target.display_avatar.url)
-    embed.add_field(name="👛 Wallet",      value=sc(data[1]), inline=True)
-    embed.add_field(name="🏦 Bank",        value=f"{sc(data[2])} / {sc(data[3])}", inline=True)
-    embed.add_field(name="💰 Net Worth",   value=sc(data[1]+data[2]), inline=True)
-    embed.add_field(name="⭐ Level",       value=f"Lvl {data[5]}  |  {data[6]} XP", inline=True)
-    embed.add_field(name="📈 Total Earned",value=sc(data[4]), inline=True)
-    embed.add_field(name="🔥 Daily Streak",value=f"{data[7]} days", inline=True)
+    
+    # Create visual progress bar for level
+    xp_progress = (data[6] / (data[5] * 100)) * 10
+    xp_bar = "█" * int(xp_progress) + "░" * (10 - int(xp_progress))
+    
+    embed.add_field(name="👛 Wallet", value=sc(data[1]), inline=True)
+    embed.add_field(name="🏦 Bank", value=f"{sc(data[2])}\n(Max: {sc(data[3])})", inline=True)
+    embed.add_field(name="💰 Net Worth", value=sc(data[1]+data[2]), inline=True)
+    embed.add_field(name=f"⭐ Level {data[5]}", value=f"`{xp_bar}`\n{data[6]}/{data[5]*100} XP", inline=True)
+    embed.add_field(name="📈 Total Earned", value=sc(data[4]), inline=True)
+    embed.add_field(name="🔥 Streak", value=f"{data[7]} days 🏆", inline=True)
+    embed.add_field(name="👥 Invites", value=f"{data[10]} members invited", inline=True)
+    
+    embed.set_footer(text=f"Last updated: {datetime.now().strftime('%m/%d %H:%M')}")
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="daily", description="Claim your daily Sailor Coins reward")
@@ -406,25 +614,31 @@ async def daily(interaction: discord.Interaction):
         return await interaction.response.send_message("❌ You're economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "daily", 86400)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="⏳ Already claimed!", description=f"Come back in **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="⏳ Already claimed!",
+            description=f"Come back in **{fmt_time(rem)}**",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     data = get_user(uid)
     streak = data[7] + 1
     daily_mult = get_mult(uid, "daily")
     base = random.randint(200, 500)
     streak_bonus = min(streak * 10, 300)
     amount = int((base + streak_bonus) * daily_mult)
-    add_wallet(uid, amount)
+    add_wallet(uid, amount, "daily")
     set_cd(uid, "daily")
     conn = db()
     conn.execute("UPDATE users SET streak=?, last_daily=? WHERE user_id=?", (streak, time.time(), uid))
     conn.commit()
     conn.close()
+    
     embed = discord.Embed(title="🌅 Daily Reward!", color=GOLD)
-    embed.add_field(name="Earned",        value=sc(amount), inline=True)
-    embed.add_field(name="🔥 Streak",     value=f"{streak} days", inline=True)
-    embed.add_field(name="Streak Bonus",  value=sc(streak_bonus), inline=True)
+    embed.add_field(name="Base Reward", value=sc(base), inline=True)
+    embed.add_field(name="🔥 Streak Bonus", value=sc(streak_bonus), inline=True)
+    embed.add_field(name="💰 Total Earned", value=sc(amount), inline=True)
+    embed.add_field(name="🏆 Current Streak", value=f"{streak} days 🔥", inline=False)
     embed.set_footer(text="Come back tomorrow to keep your streak!")
     await interaction.response.send_message(embed=embed)
 
@@ -435,33 +649,48 @@ async def weekly(interaction: discord.Interaction):
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "weekly", 604800)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="⏳ Weekly Claimed", description=f"Come back in **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="⏳ Weekly Claimed",
+            description=f"Come back in **{fmt_time(rem)}**",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     amount = random.randint(1500, 3000)
-    add_wallet(uid, amount)
+    add_wallet(uid, amount, "weekly")
     set_cd(uid, "weekly")
-    embed = discord.Embed(title="📅 Weekly Reward!", description=f"You claimed {sc(amount)}!", color=GOLD)
+    
+    embed = discord.Embed(
+        title="📅 Weekly Bonus Claimed!",
+        description=f"You received {sc(amount)}!",
+        color=GOLD
+    )
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MEMBER COMMANDS - EARNING
+# MEMBER COMMANDS - EARNING (Foraging)
 # ══════════════════════════════════════════════════════════════════════════════
 
-@bot.tree.command(name="fish", description="Cast your line and fish for Sailor Coins")
+@bot.tree.command(name="fish", description="🎣 Cast your line and fish for Sailor Coins")
 async def fish(interaction: discord.Interaction):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "fish", 30)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="🎣 Still Fishing", description=f"Wait **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="🎣 Still Fishing",
+            description=f"Wait **{fmt_time(rem)}**",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     luck  = get_mult(uid, "luck")
     coins = get_mult(uid, "coins")
     inv   = get_inv(uid)
     rod   = 1.5 if "Fishing Rod+" in inv else 1.0
+    
     catches = [
         ("🥾 Old Boot",       0,    5,    6,  False),
         ("🐟 Small Fish",     10,   50,   38, True),
@@ -476,29 +705,38 @@ async def fish(interaction: discord.Interaction):
     catch = random.choices(catches, weights=weights)[0]
     amount = int(random.randint(catch[1], catch[2]) * coins * rod) if catch[2] > 0 else 0
     if amount > 0:
-        add_wallet(uid, amount)
+        add_wallet(uid, amount, "fishing")
     set_cd(uid, "fish")
+    
     embed = discord.Embed(title="🎣 Fishing Results!", color=BLUE)
-    embed.add_field(name="You caught", value=catch[0], inline=True)
-    embed.add_field(name="Earned",     value=sc(amount) if amount else "Nothing 😢", inline=True)
-    if luck > 1: 
+    embed.add_field(name="Catch", value=catch[0], inline=True)
+    embed.add_field(name="Value", value=sc(amount) if amount else "Nothing 😢", inline=True)
+    if rod > 1:
+        embed.add_field(name="Rod Bonus", value=f"+{int((rod-1)*100)}%", inline=True)
+    if luck > 1:
         embed.set_footer(text=f"🍀 Luck x{luck:.1f} active!")
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="mine", description="Descend into the mines for Sailor Coins")
+@bot.tree.command(name="mine", description="⛏️ Descend into the mines for Sailor Coins")
 async def mine(interaction: discord.Interaction):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "mine", 45)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="⛏️ Still Mining", description=f"Wait **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="⛏️ Still Mining",
+            description=f"Wait **{fmt_time(rem)}**",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     luck  = get_mult(uid, "luck")
     coins = get_mult(uid, "coins")
     inv   = get_inv(uid)
     pick  = 1.5 if "Diamond Pickaxe" in inv else 1.0
+    
     finds = [
         ("🪨 Stone",           5,   20,   38),
         ("🔩 Iron Ore",        20,  60,   28),
@@ -511,27 +749,36 @@ async def mine(interaction: discord.Interaction):
     weights = [f[3] * luck for f in finds]
     find   = random.choices(finds, weights=weights)[0]
     amount = int(random.randint(find[1], find[2]) * coins * pick)
-    add_wallet(uid, amount)
+    add_wallet(uid, amount, "mining")
     set_cd(uid, "mine")
+    
     embed = discord.Embed(title="⛏️ Mining Results!", color=0x8B4513)
-    embed.add_field(name="You found", value=find[0], inline=True)
-    embed.add_field(name="Earned",    value=sc(amount), inline=True)
+    embed.add_field(name="Found", value=find[0], inline=True)
+    embed.add_field(name="Value", value=sc(amount), inline=True)
+    if pick > 1:
+        embed.add_field(name="Pickaxe Bonus", value=f"+{int((pick-1)*100)}%", inline=True)
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="hunt", description="Hunt wild creatures for Sailor Coins")
+@bot.tree.command(name="hunt", description="🏹 Hunt wild creatures for Sailor Coins")
 async def hunt(interaction: discord.Interaction):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "hunt", 60)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="🏹 Still Hunting", description=f"Wait **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="🏹 Still Hunting",
+            description=f"Wait **{fmt_time(rem)}**",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     luck  = get_mult(uid, "luck")
     coins = get_mult(uid, "coins")
     inv   = get_inv(uid)
     bow   = 1.5 if "Hunter's Bow" in inv else 1.0
+    
     animals = [
         ("🐰 Rabbit",       15,  40,  35),
         ("🦊 Fox",          40,  100, 25),
@@ -544,23 +791,31 @@ async def hunt(interaction: discord.Interaction):
     weights = [a[3] * luck for a in animals]
     animal = random.choices(animals, weights=weights)[0]
     amount = int(random.randint(animal[1], animal[2]) * coins * bow)
-    add_wallet(uid, amount)
+    add_wallet(uid, amount, "hunting")
     set_cd(uid, "hunt")
+    
     embed = discord.Embed(title="🏹 Hunt Results!", color=0x228B22)
-    embed.add_field(name="You hunted", value=animal[0], inline=True)
-    embed.add_field(name="Earned",     value=sc(amount), inline=True)
+    embed.add_field(name="Hunted", value=animal[0], inline=True)
+    embed.add_field(name="Value", value=sc(amount), inline=True)
+    if bow > 1:
+        embed.add_field(name="Bow Bonus", value=f"+{int((bow-1)*100)}%", inline=True)
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="work", description="Work a shift and earn honest Sailor Coins")
+@bot.tree.command(name="work", description="💼 Work a shift and earn honest Sailor Coins")
 async def work(interaction: discord.Interaction):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "work", 3600)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="💼 Still on Shift", description=f"Clock back in after **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="💼 Still on Shift",
+            description=f"Clock back in after **{fmt_time(rem)}**",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     coins = get_mult(uid, "coins")
     jobs = [
         ("🧑‍✈️ Ship Captain",       220, 450),
@@ -576,27 +831,41 @@ async def work(interaction: discord.Interaction):
     ]
     job    = random.choice(jobs)
     amount = int(random.randint(job[1], job[2]) * coins)
-    add_wallet(uid, amount)
+    add_wallet(uid, amount, "work")
     set_cd(uid, "work")
+    
     embed = discord.Embed(title="💼 Shift Complete!", color=GREEN)
-    embed.add_field(name="Job",    value=job[0],    inline=True)
+    embed.add_field(name="Position", value=job[0], inline=True)
     embed.add_field(name="Salary", value=sc(amount), inline=True)
+    if coins > 1:
+        embed.add_field(name="Multiplier", value=f"x{coins:.1f}", inline=True)
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="crime", description="Commit a crime — high risk, high reward")
+# ══════════════════════════════════════════════════════════════════════════════
+# MEMBER COMMANDS - RISKY
+# ══════════════════════════════════════════════════════════════════════════════
+
+@bot.tree.command(name="crime", description="🕵️ Commit a crime — high risk, high reward")
 async def crime(interaction: discord.Interaction):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     on_cd, rem = check_cd(uid, "crime", 7200)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="🕵️ Laying Low", description=f"Wait **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="🕵️ Laying Low",
+            description=f"Wait **{fmt_time(rem)}**",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     set_cd(uid, "crime")
     data   = get_user(uid)
     wallet = data[1]
     inv    = get_inv(uid)
+    
     crimes = [
         ("🎭 Con Artist",    "Swindled tourists",      300,  800),
         ("🏴‍☠️ Piracy",       "Raided a cargo ship",    600,  1800),
@@ -607,146 +876,124 @@ async def crime(interaction: discord.Interaction):
     ]
     act = random.choice(crimes)
     fail_chance = 0.35
+    
     if "Escape Card" in inv and random.random() < fail_chance:
         remove_inv(uid, "Escape Card", 1)
-        embed = discord.Embed(title="🃏 Escape Card Used!", description="You got caught but used your Escape Card!", color=PURPLE)
-        await interaction.response.send_message(embed=embed)
-        return
+        embed = discord.Embed(
+            title="🃏 Escape Card Used!",
+            description="You got caught but used your Escape Card to flee!",
+            color=PURPLE
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     if random.random() < fail_chance:
         fine = int(wallet * random.uniform(0.05, 0.25))
         fine = max(fine, 50)
-        add_wallet(uid, -min(fine, wallet))
+        add_wallet(uid, -min(fine, wallet), "crime_fine")
         embed = discord.Embed(title="🚔 Busted!", color=RED)
-        embed.add_field(name="Crime Attempted", value=act[0],    inline=False)
-        embed.add_field(name="Fine Paid",        value=sc(fine), inline=False)
+        embed.add_field(name="Crime", value=act[0], inline=True)
+        embed.add_field(name="Fine Paid", value=sc(fine), inline=True)
+        embed.set_thumbnail(url="https://media.discordapp.net/attachments/1/emoji/police.png")
     else:
         coins  = get_mult(uid, "coins")
         amount = int(random.randint(act[2], act[3]) * coins)
-        add_wallet(uid, amount)
+        add_wallet(uid, amount, "crime")
         embed = discord.Embed(title="😈 Crime Successful!", color=PURPLE)
-        embed.add_field(name="Crime",   value=act[0],                 inline=False)
-        embed.add_field(name="Result",  value=f"_{act[1]}_",          inline=False)
-        embed.add_field(name="Looted",  value=sc(amount),             inline=False)
+        embed.add_field(name="Crime", value=act[0], inline=False)
+        embed.add_field(name="Method", value=f"_{act[1]}_", inline=False)
+        embed.add_field(name="Looted", value=sc(amount), inline=False)
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="beg", description="Beg passers-by for Sailor Coins")
-async def beg(interaction: discord.Interaction):
-    uid = interaction.user.id
-    if is_banned(uid): 
-        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
-    on_cd, rem = check_cd(uid, "beg", 300)
-    if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="😑 People are tired of you", description=f"Wait **{fmt_time(rem)}**", color=RED)
-        )
-    set_cd(uid, "beg")
-    scenarios = [
-        ("🧑‍✈️ A kind captain", 10, 60),
-        ("💰 A wealthy merchant", 30, 120),
-        ("🏴‍☠️ A generous pirate", 20, 80),
-        ("👵 An old sailor", 5, 30),
-        (None, 0, 0),
-        (None, 0, 0),
-    ]
-    s = random.choice(scenarios)
-    if s[0] is None:
-        embed = discord.Embed(title="😞 Ignored", description="Everyone walked right past you.", color=RED)
-    else:
-        amount = random.randint(s[1], s[2])
-        add_wallet(uid, amount)
-        embed = discord.Embed(title="🙏 Someone Helped!", color=GREEN)
-        embed.add_field(name=s[0], value=f"gave you {sc(amount)}", inline=False)
-    await interaction.response.send_message(embed=embed)
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MEMBER COMMANDS - PVP
-# ══════════════════════════════════════════════════════════════════════════════
-
-@bot.tree.command(name="rob", description="Attempt to rob another user's wallet")
+@bot.tree.command(name="rob", description="🥷 Attempt to rob another user's wallet")
 @app_commands.describe(user="The user you want to rob")
 async def rob(interaction: discord.Interaction, user: discord.Member):
     rid = interaction.user.id
     vid = user.id
+    
     if is_banned(rid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     if user.bot or rid == vid: 
         return await interaction.response.send_message("❌ Invalid target!", ephemeral=True)
+    
     on_cd, rem = check_cd(rid, "rob", 3600)
     if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="⏳ Hiding", description=f"Wait **{fmt_time(rem)}**", color=RED)
+        embed = discord.Embed(
+            title="⏳ Hiding",
+            description=f"Wait **{fmt_time(rem)}** before attempting another robbery",
+            color=RED
         )
+        return await interaction.response.send_message(embed=embed)
+    
     robber = get_user(rid)
     victim = get_user(vid)
+    
     if robber[1] < 100:
-        return await interaction.response.send_message("❌ You need at least ⚓ 100 to rob someone.", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Not Enough Coins",
+            description="You need at least ⚓ **100** to rob someone!",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     if victim[1] < 50:
-        return await interaction.response.send_message("❌ That person has nothing to steal!", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Nothing to Steal",
+            description=f"{user.mention} has nothing valuable!",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     set_cd(rid, "rob")
     v_inv = get_inv(vid)
+    
+    # Shield check
     if "Shield" in v_inv:
         remove_inv(vid, "Shield", 1)
         fine = int(robber[1] * 0.10)
-        add_wallet(rid, -fine)
+        add_wallet(rid, -fine, "robbery_caught")
         embed = discord.Embed(title="🛡️ Shield Blocked You!", color=RED)
-        embed.add_field(name="Fine Paid", value=sc(fine), inline=False)
+        embed.add_field(name="Victim Protected", value=f"{user.mention}'s Shield activated!", inline=True)
+        embed.add_field(name="Fine Paid", value=sc(fine), inline=True)
         return await interaction.response.send_message(embed=embed)
+    
+    # Lucky charm reduces success
     has_charm = "Lucky Charm" in v_inv
     success_chance = 0.38 if has_charm else 0.52
+    
     if random.random() < success_chance:
         pct    = random.uniform(0.10, 0.40)
         stolen = max(10, int(victim[1] * pct))
-        add_wallet(vid, -stolen)
-        add_wallet(rid, stolen)
+        add_wallet(vid, -stolen, "robbed")
+        add_wallet(rid, stolen, "robbery")
+        
         embed = discord.Embed(title="🥷 Robbery Successful!", color=GREEN)
-        embed.add_field(name="Victim",  value=user.mention,  inline=True)
-        embed.add_field(name="Stolen",  value=sc(stolen),    inline=True)
+        embed.add_field(name="Victim", value=user.mention, inline=True)
+        embed.add_field(name="Stolen", value=sc(stolen), inline=True)
         embed.set_footer(text=f"Swiped {pct:.0%} of their wallet")
     else:
         fine = int(robber[1] * random.uniform(0.10, 0.25))
-        add_wallet(rid, -fine)
-        add_wallet(vid, fine)
+        add_wallet(rid, -fine, "robbery_caught")
+        add_wallet(vid, fine, "robbery_reward")
+        
         embed = discord.Embed(title="🚔 Caught!", color=RED)
-        embed.add_field(name="Fine Paid to Victim", value=sc(fine), inline=False)
+        embed.add_field(name="Status", value="You were caught by the guards!", inline=False)
+        embed.add_field(name="Fine Paid", value=sc(fine), inline=False)
+        embed.add_field(name="Recipient", value=f"Paid to {user.mention}", inline=False)
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="bankrob", description="Rob the bank — massive reward, massive risk")
-async def bankrob(interaction: discord.Interaction):
-    uid = interaction.user.id
-    if is_banned(uid): 
-        return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
-    on_cd, rem = check_cd(uid, "bankrob", 14400)
-    if on_cd:
-        return await interaction.response.send_message(
-            embed=discord.Embed(title="🚔 Heat is Too Hot", description=f"Lay low for **{fmt_time(rem)}**", color=RED)
-        )
-    data = get_user(uid)
-    if data[1] < 500:
-        return await interaction.response.send_message("❌ You need ⚓ 500+ in your wallet to attempt this!", ephemeral=True)
-    set_cd(uid, "bankrob")
-    if random.random() < 0.28:
-        loot = random.randint(2000, 8000)
-        add_wallet(uid, loot)
-        embed = discord.Embed(title="🏦💥 BANK ROBBED!", color=GOLD)
-        embed.add_field(name="🎉 Heist Successful!", value=f"You escaped with {sc(loot)}!", inline=False)
-        embed.set_footer(text="You're a living legend...")
-    else:
-        penalty = int(data[1] * random.uniform(0.20, 0.50))
-        add_wallet(uid, -penalty)
-        embed = discord.Embed(title="🚨 HEIST FAILED!", color=RED)
-        embed.add_field(name="Arrested!", value=f"Fined {sc(penalty)}!", inline=False)
-    await interaction.response.send_message(embed=embed)
-
-# ═════════════════════════════���════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # MEMBER COMMANDS - GAMES
 # ══════════════════════════════════════════════════════════════════════════════
 
-@bot.tree.command(name="gamble", description="Gamble your Sailor Coins")
+@bot.tree.command(name="gamble", description="🎰 Gamble your Sailor Coins")
 @app_commands.describe(amount="Amount to gamble, or 'all'")
 async def gamble(interaction: discord.Interaction, amount: str):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    
     data = get_user(uid)
     if amount.lower() == "all":
         bet = data[1]
@@ -755,315 +1002,479 @@ async def gamble(interaction: discord.Interaction, amount: str):
             bet = int(amount)
         except: 
             return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
+    
     if bet < 10 or bet > data[1]:
-        return await interaction.response.send_message("❌ Invalid bet (min ⚓ 10).", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Invalid Bet",
+            description=f"Min: ⚓ **10** | Max: {sc(data[1])}",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     on_cd, rem = check_cd(uid, "gamble", 12)
     if on_cd:
         return await interaction.response.send_message(f"⏳ Wait **{fmt_time(rem)}**", ephemeral=True)
+    
     set_cd(uid, "gamble")
+    
     if random.random() < 0.45:
         coins     = get_mult(uid, "coins")
         winnings  = int(bet * random.uniform(1.2, 2.5) * coins)
-        add_wallet(uid, winnings - bet)
+        add_wallet(uid, winnings - bet, "gamble_win")
+        
         embed = discord.Embed(title="🎰 You Won!", color=GREEN)
-        embed.add_field(name="Bet",    value=sc(bet),          inline=True)
-        embed.add_field(name="Won",    value=sc(winnings),     inline=True)
-        embed.add_field(name="Profit", value=sc(winnings-bet), inline=True)
+        embed.add_field(name="Bet", value=sc(bet), inline=True)
+        embed.add_field(name="Won", value=sc(winnings), inline=True)
+        embed.add_field(name="Profit", value=f"+{sc(winnings-bet)}", inline=True)
     else:
-        add_wallet(uid, -bet)
+        add_wallet(uid, -bet, "gamble_loss")
+        
         embed = discord.Embed(title="🎰 House Wins", color=RED)
-        embed.add_field(name="Lost", value=sc(bet), inline=False)
+        embed.add_field(name="Bet", value=sc(bet), inline=True)
+        embed.add_field(name="Result", value="Lost", inline=True)
+    
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="slots", description="Spin the slot machine")
+@bot.tree.command(name="slots", description="🎡 Spin the slot machine")
 @app_commands.describe(amount="Amount to bet (min 10)")
 async def slots(interaction: discord.Interaction, amount: int):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    
     data = get_user(uid)
     if amount < 10 or amount > data[1]:
-        return await interaction.response.send_message("❌ Invalid bet.", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Invalid Bet",
+            description=f"Min: ⚓ **10** | Max: {sc(data[1])}",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     on_cd, rem = check_cd(uid, "slots", 15)
     if on_cd:
         return await interaction.response.send_message(f"⏳ Wait **{fmt_time(rem)}**", ephemeral=True)
+    
     set_cd(uid, "slots")
-    syms    = ["⚓","🌊","🐠","💎","🌟","🏴‍☠️","🦈"]
+    
+    syms    = ["⚓","🌊","🐠","💎","🌟","🏴��☠️","🦈"]
     weights = [30,   25,  20,  10,   7,    5,   3]
     reels   = random.choices(syms, weights=weights, k=3)
-    display = " | ".join(reels)
+    display = f" {reels[0]} | {reels[1]} | {reels[2]} "
+    
     if reels[0] == reels[1] == reels[2]:
         mults = {"⚓":5,"🌊":4,"🐠":3,"💎":8,"🌟":12,"🏴‍☠️":18,"🦈":15}
         m     = mults.get(reels[0], 3)
         win   = amount * m
-        add_wallet(uid, win - amount)
-        embed = discord.Embed(title=f"🎰 JACKPOT! {display}", description=f"Won {sc(win)} (x{m})", color=GOLD)
+        add_wallet(uid, win - amount, "slots_jackpot")
+        
+        embed = discord.Embed(
+            title=f"🎰 JACKPOT!{display}",
+            description=f"You won {sc(win)} (x{m} multiplier)!",
+            color=GOLD
+        )
     elif reels[0]==reels[1] or reels[1]==reels[2]:
         win = int(amount * 1.5)
-        add_wallet(uid, win - amount)
-        embed = discord.Embed(title=f"🎰 Two of a Kind! {display}", description=f"Won {sc(win)}", color=GREEN)
+        add_wallet(uid, win - amount, "slots_win")
+        
+        embed = discord.Embed(
+            title=f"🎰 Two of a Kind!{display}",
+            description=f"You won {sc(win)}!",
+            color=GREEN
+        )
     else:
-        add_wallet(uid, -amount)
-        embed = discord.Embed(title=f"🎰 No Match  {display}", description=f"Lost {sc(amount)}", color=RED)
+        add_wallet(uid, -amount, "slots_loss")
+        
+        embed = discord.Embed(
+            title=f"🎰 No Match{display}",
+            description=f"You lost {sc(amount)}",
+            color=RED
+        )
+    
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="coinflip", description="Flip a coin — double or nothing!")
+@bot.tree.command(name="coinflip", description="🪙 Flip a coin — double or nothing!")
 @app_commands.describe(amount="Bet amount", side="heads or tails")
 async def coinflip(interaction: discord.Interaction, amount: int, side: str):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    
     if side.lower() not in ("heads","tails"):
-        return await interaction.response.send_message("❌ Pick 'heads' or 'tails'.", ephemeral=True)
+        return await interaction.response.send_message("❌ Pick **heads** or **tails**.", ephemeral=True)
+    
     data = get_user(uid)
     if amount < 10 or amount > data[1]:
-        return await interaction.response.send_message("❌ Invalid bet.", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Invalid Bet",
+            description=f"Min: ⚓ **10** | Max: {sc(data[1])}",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     on_cd, rem = check_cd(uid, "flip", 10)
     if on_cd:
         return await interaction.response.send_message(f"⏳ Wait **{fmt_time(rem)}**", ephemeral=True)
+    
     set_cd(uid, "flip")
     result = random.choice(("heads","tails"))
     emoji  = "🪙" if result=="heads" else "🌑"
+    
     if result == side.lower():
-        add_wallet(uid, amount)
+        add_wallet(uid, amount, "coinflip_win")
         embed = discord.Embed(title=f"{emoji} {result.upper()} — You Win!", color=GREEN)
-        embed.add_field(name="Won", value=sc(amount), inline=False)
+        embed.add_field(name="Bet", value=sc(amount), inline=True)
+        embed.add_field(name="Won", value=sc(amount), inline=True)
     else:
-        add_wallet(uid, -amount)
+        add_wallet(uid, -amount, "coinflip_loss")
         embed = discord.Embed(title=f"{emoji} {result.upper()} — You Lose!", color=RED)
-        embed.add_field(name="Lost", value=sc(amount), inline=False)
-    embed.set_footer(text=f"You picked {side} | Result: {result}")
+        embed.add_field(name="Bet", value=sc(amount), inline=True)
+        embed.add_field(name="Lost", value=sc(amount), inline=True)
+    
+    embed.add_field(name="You Picked", value=side.capitalize(), inline=True)
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="highlow", description="Guess if the next number is higher or lower")
+@bot.tree.command(name="highlow", description="🎯 Guess if the next number is higher or lower")
 @app_commands.describe(amount="Bet amount", guess="higher or lower")
 async def highlow(interaction: discord.Interaction, amount: int, guess: str):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    
     if guess.lower() not in ("higher","lower"):
-        return await interaction.response.send_message("❌ Guess 'higher' or 'lower'.", ephemeral=True)
+        return await interaction.response.send_message("❌ Guess **higher** or **lower**.", ephemeral=True)
+    
     data = get_user(uid)
     if amount < 10 or amount > data[1]:
-        return await interaction.response.send_message("❌ Invalid bet.", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Invalid Bet",
+            description=f"Min: ⚓ **10** | Max: {sc(data[1])}",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     on_cd, rem = check_cd(uid, "highlow", 10)
     if on_cd:
         return await interaction.response.send_message(f"⏳ Wait **{fmt_time(rem)}**", ephemeral=True)
+    
     set_cd(uid, "highlow")
     first  = random.randint(1, 10)
     second = random.randint(1, 10)
     correct = (guess.lower()=="higher" and second>first) or (guess.lower()=="lower" and second<first)
+    
     if correct:
-        add_wallet(uid, amount)
+        add_wallet(uid, amount, "highlow_win")
         embed = discord.Embed(title="✅ Correct!", color=GREEN)
-        embed.description = f"**{first}** → **{second}** | You guessed **{guess}** and won {sc(amount)}!"
+        embed.description = f"**{first}** → **{second}** ✓\n\nYou won {sc(amount)}!"
     else:
-        add_wallet(uid, -amount)
+        add_wallet(uid, -amount, "highlow_loss")
         embed = discord.Embed(title="❌ Wrong!", color=RED)
-        embed.description = f"**{first}** → **{second}** | You guessed **{guess}** and lost {sc(amount)}."
+        embed.description = f"**{first}** → **{second}** ✗\n\nYou lost {sc(amount)}!"
+    
+    embed.add_field(name="Your Guess", value=guess.capitalize(), inline=True)
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="duel", description="Challenge another user to a coin duel")
+@bot.tree.command(name="duel", description="⚔️ Challenge another user to a duel")
 @app_commands.describe(user="Opponent", amount="Wager amount")
 async def duel(interaction: discord.Interaction, user: discord.Member, amount: int):
     cid, oid = interaction.user.id, user.id
+    
     if is_banned(cid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     if user.bot or cid==oid: 
         return await interaction.response.send_message("❌ Invalid opponent.", ephemeral=True)
+    
     cd = get_user(cid)
     od = get_user(oid)
+    
     if amount < 10 or amount > cd[1]:
         return await interaction.response.send_message("❌ Invalid wager.", ephemeral=True)
     if amount > od[1]:
         return await interaction.response.send_message("❌ Opponent doesn't have enough coins.", ephemeral=True)
-    embed = discord.Embed(title="⚔️ Duel Challenge!",
-                          description=f"{interaction.user.mention} challenges {user.mention} to a duel for {sc(amount)}!\n{user.mention}, reply with `accept` or `decline`.",
-                          color=GOLD)
+    
+    embed = discord.Embed(
+        title="⚔️ Duel Challenge!",
+        description=f"{interaction.user.mention} challenges {user.mention} to a duel!",
+        color=GOLD
+    )
+    embed.add_field(name="Wager", value=sc(amount), inline=True)
+    embed.add_field(name="Action", value=f"{user.mention}, reply with `accept` or `decline`", inline=True)
+    
     await interaction.response.send_message(embed=embed)
+    
     def check(m): return m.author==user and m.channel==interaction.channel and m.content.lower() in ("accept","decline")
     try:
         resp = await bot.wait_for("message", check=check, timeout=30.0)
         if resp.content.lower()=="decline":
-            return await interaction.followup.send(f"❌ {user.mention} declined the duel.")
+            embed = discord.Embed(
+                title="❌ Duel Declined",
+                description=f"{user.mention} declined the duel.",
+                color=RED
+            )
+            return await interaction.followup.send(embed=embed)
+        
         winner = random.choice([interaction.user, user])
         loser  = user if winner==interaction.user else interaction.user
-        add_wallet(winner.id, amount)
-        add_wallet(loser.id, -amount)
-        await interaction.followup.send(embed=discord.Embed(
+        
+        add_wallet(winner.id, amount, "duel_win")
+        add_wallet(loser.id, -amount, "duel_loss")
+        
+        embed = discord.Embed(
             title="⚔️ Duel Result!",
-            description=f"**{winner.mention}** wins {sc(amount)}! Better luck next time, {loser.mention}!",
+            description=f"**{winner.mention}** wins {sc(amount)}!",
             color=GREEN
-        ))
+        )
+        embed.add_field(name="Loser", value=loser.mention, inline=True)
+        embed.set_thumbnail(url=winner.display_avatar.url)
+        
+        await interaction.followup.send(embed=embed)
     except asyncio.TimeoutError:
-        await interaction.followup.send(f"⌛ {user.mention} didn't respond. Duel cancelled.")
+        embed = discord.Embed(
+            title="⌛ Duel Expired",
+            description=f"{user.mention} didn't respond. Duel cancelled.",
+            color=RED
+        )
+        await interaction.followup.send(embed=embed)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MEMBER COMMANDS - BANK & TRANSFER
+# MEMBER COMMANDS - BANKING & TRANSFER
 # ══════════════════════════════════════════════════════════════════════════════
 
-@bot.tree.command(name="deposit", description="Deposit Sailor Coins into your bank")
+@bot.tree.command(name="deposit", description="🏦 Deposit Sailor Coins into your bank")
 @app_commands.describe(amount="Amount to deposit, or 'all'")
 async def deposit(interaction: discord.Interaction, amount: str):
     uid  = interaction.user.id
     data = get_user(uid)
     dep  = data[1] if amount.lower()=="all" else (int(amount) if amount.isdigit() else -1)
+    
     if dep <= 0 or dep > data[1]:
         return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
+    
     space = data[3] - data[2]
     dep = min(dep, space)
+    
     if dep <= 0:
-        return await interaction.response.send_message("❌ Bank full! Buy a Bank Expansion in `/shop`.", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Bank Full!",
+            description=f"Buy a **Bank Expansion** in `/shop` to increase limit!",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed)
+    
     add_wallet(uid, -dep)
     add_bank(uid, dep)
+    
     embed = discord.Embed(title="🏦 Deposited!", color=GREEN)
     embed.add_field(name="Amount", value=sc(dep), inline=True)
+    embed.add_field(name="New Bank Balance", value=f"{sc(data[2] + dep)} / {sc(data[3])}", inline=True)
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="withdraw", description="Withdraw Sailor Coins from your bank")
+@bot.tree.command(name="withdraw", description="🏦 Withdraw Sailor Coins from your bank")
 @app_commands.describe(amount="Amount to withdraw, or 'all'")
 async def withdraw(interaction: discord.Interaction, amount: str):
     uid  = interaction.user.id
     data = get_user(uid)
     wdr  = data[2] if amount.lower()=="all" else (int(amount) if amount.isdigit() else -1)
+    
     if wdr <= 0 or wdr > data[2]:
         return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
+    
     add_bank(uid, -wdr)
     add_wallet(uid, wdr)
+    
     embed = discord.Embed(title="🏦 Withdrawn!", color=GREEN)
     embed.add_field(name="Amount", value=sc(wdr), inline=True)
+    embed.add_field(name="New Wallet", value=sc(data[1] + wdr), inline=True)
+    
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="transfer", description="Send Sailor Coins to another user")
+@bot.tree.command(name="transfer", description="💸 Send Sailor Coins to another user")
 @app_commands.describe(user="Recipient", amount="Amount to send")
 async def transfer(interaction: discord.Interaction, user: discord.Member, amount: int):
     sid, rid = interaction.user.id, user.id
+    
     if is_banned(sid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
     if user.bot or sid==rid: 
         return await interaction.response.send_message("❌ Invalid recipient.", ephemeral=True)
+    
     data = get_user(sid)
     if amount <= 0 or amount > data[1]:
         return await interaction.response.send_message("❌ Invalid amount.", ephemeral=True)
+    
     on_cd, rem = check_cd(sid, "transfer", 30)
     if on_cd:
         return await interaction.response.send_message(f"⏳ Wait **{fmt_time(rem)}**", ephemeral=True)
+    
     set_cd(sid, "transfer")
     add_wallet(sid, -amount)
-    add_wallet(rid, amount)
+    add_wallet(rid, amount, "transfer")
+    
     embed = discord.Embed(title="💸 Transfer Complete!", color=GREEN)
-    embed.add_field(name="To",     value=user.mention, inline=True)
-    embed.add_field(name="Amount", value=sc(amount),   inline=True)
+    embed.add_field(name="From", value=interaction.user.mention, inline=True)
+    embed.add_field(name="To", value=user.mention, inline=True)
+    embed.add_field(name="Amount", value=sc(amount), inline=False)
+    
     await interaction.response.send_message(embed=embed)
 
-# ═════════════════════════════════════════════════════��════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # MEMBER COMMANDS - SHOP & INVENTORY
 # ══════════════════════════════════════════════════════════════════════════════
 
-@bot.tree.command(name="shop", description="Browse the Sailor Coins shop")
+@bot.tree.command(name="shop", description="🛍️ Browse interactive shop")
 async def shop(interaction: discord.Interaction):
     conn = db()
-    items = conn.execute("SELECT item_name, price, description FROM shop ORDER BY price").fetchall()
+    items = conn.execute("SELECT item_name, price, description, emoji FROM shop ORDER BY price").fetchall()
     conn.close()
-    embed = discord.Embed(title="⚓ Sailor Shop", description="Use `/buy <item>` to purchase!", color=GOLD)
-    for item in items:
-        embed.add_field(name=f"{item[0]}  —  {sc(item[1])}", value=item[2], inline=False)
-    await interaction.response.send_message(embed=embed)
+    
+    embed = discord.Embed(
+        title="⚓ Sailor Shop",
+        description="Use buttons below to purchase items or use `/buy <name>`",
+        color=GOLD
+    )
+    
+    for item_name, price, description, emoji in items:
+        embed.add_field(name=f"{emoji} {item_name}", value=f"{sc(price)}\n_{description}_", inline=True)
+    
+    embed.set_footer(text="Click buttons to buy or use /buy <name>")
+    
+    await interaction.response.send_message(embed=embed, view=ShopView())
 
-@bot.tree.command(name="buy", description="Buy an item from the shop")
+@bot.tree.command(name="buy", description="🛍️ Buy an item from the shop")
 @app_commands.describe(item="Item name (from /shop)")
 async def buy(interaction: discord.Interaction, item: str):
     uid = interaction.user.id
     if is_banned(uid): 
         return await interaction.response.send_message("❌ Economy banned.", ephemeral=True)
+    
     conn = db()
     row  = conn.execute("SELECT * FROM shop WHERE LOWER(item_name)=LOWER(?)", (item,)).fetchone()
     conn.close()
+    
     if not row:
         return await interaction.response.send_message("❌ Item not found. Check `/shop`.", ephemeral=True)
-    item_name, price, desc, item_type, value = row
+    
+    item_name, price, desc, item_type, value, emoji = row
     data = get_user(uid)
+    
     if data[1] < price:
-        return await interaction.response.send_message(f"❌ Need {sc(price)}, you have {sc(data[1])}.", ephemeral=True)
+        embed = discord.Embed(
+            title="❌ Insufficient Coins",
+            description=f"Need: {sc(price)}\nYou have: {sc(data[1])}",
+            color=RED
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    # Purchase logic (same as button)
     add_wallet(uid, -price)
+    
     if item_type == "multiplier":
         parts = value.split(":")
         set_mult(uid, parts[0], float(parts[1]), int(parts[2]))
-        embed = discord.Embed(title=f"✅ {item_name} Activated!", description=f"**x{parts[1]} {parts[0]}** for **{fmt_time(int(parts[2]))}**!", color=GREEN)
+        embed = discord.Embed(
+            title=f"✅ {emoji} {item_name} Activated!",
+            description=f"**x{parts[1]} {parts[0]}** active for **{fmt_time(int(parts[2]))}**!",
+            color=GREEN
+        )
     elif item_type == "upgrade":
         add_inv(uid, item_name)
-        embed = discord.Embed(title=f"✅ {item_name} Equipped!", description=desc, color=GREEN)
+        embed = discord.Embed(title=f"✅ {emoji} {item_name} Equipped!", description=desc, color=GREEN)
     elif item_type == "bank":
         extra = int(value)
         conn = db()
         conn.execute("UPDATE users SET bank_limit=bank_limit+? WHERE user_id=?", (extra, uid))
         conn.commit()
         conn.close()
-        embed = discord.Embed(title="🏦 Bank Expanded!", description=f"Limit increased by {sc(extra)}!", color=GREEN)
+        embed = discord.Embed(title=f"✅ {emoji} Bank Expanded!", description=f"Limit +{sc(extra)}!", color=GREEN)
+    elif item_type == "mystery":
+        parts = value.split(":")
+        reward = random.randint(int(parts[0]), int(parts[1]))
+        add_wallet(uid, reward)
+        embed = discord.Embed(title=f"✅ {emoji} Mystery Box!", description=f"You found {sc(reward)}! 🎉", color=GOLD)
     elif item_type == "role":
         role = discord.utils.get(interaction.guild.roles, name=value)
         if role:
             await interaction.user.add_roles(role)
-            embed = discord.Embed(title="🎖️ Role Granted!", description=f"You now have the **{value}** role!", color=GREEN)
+            embed = discord.Embed(title=f"✅ {emoji} Role Granted!", description=f"You now have **{value}**!", color=GREEN)
         else:
             add_wallet(uid, price)
             embed = discord.Embed(title="❌ Role Not Found", description="Refunded!", color=RED)
-    elif item_type == "protection":
-        add_inv(uid, item_name)
-        embed = discord.Embed(title=f"🛡️ {item_name} Added!", description=desc, color=GREEN)
     else:
         add_inv(uid, item_name)
-        embed = discord.Embed(title=f"✅ {item_name} Purchased!", description=desc, color=GREEN)
-    await interaction.response.send_message(embed=embed)
+        embed = discord.Embed(title=f"✅ {emoji} {item_name} Purchased!", description=desc, color=GREEN)
+    
+    embed.set_footer(text=f"New Balance: {sc(data[1] - price)}")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="inventory", description="View your inventory")
+@bot.tree.command(name="inventory", description="🎒 View your inventory")
 async def inventory(interaction: discord.Interaction, user: discord.Member = None):
     target = user or interaction.user
     items  = get_inv(target.id)
-    embed  = discord.Embed(title=f"🎒 {target.display_name}'s Inventory", color=PURPLE)
+    
+    embed = discord.Embed(title=f"🎒 {target.display_name}'s Inventory", color=PURPLE)
+    
     if not items:
         embed.description = "Empty! Check out `/shop` to buy items."
     else:
-        for name, qty in items.items():
-            embed.add_field(name=name, value=f"x{qty}", inline=True)
+        for name, qty in sorted(items.items()):
+            embed.add_field(name=name, value=f"**x{qty}**", inline=True)
+    
+    embed.set_thumbnail(url=target.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MEMBER COMMANDS - INFO
+# MEMBER COMMANDS - INFO & STATS
 # ══════════════════════════════════════════════════════════════════════════════
 
-@bot.tree.command(name="leaderboard", description="Top 10 richest sailors")
-async def leaderboard(interaction: discord.Interaction):
-    conn = db()
-    rows = conn.execute("SELECT user_id, wallet+bank FROM users ORDER BY wallet+bank DESC LIMIT 10").fetchall()
-    conn.close()
-    embed  = discord.Embed(title="⚓ Sailor Coins Leaderboard", color=GOLD)
-    medals = ["🥇","🥈","🥉"]
-    for i, (uid, total) in enumerate(rows):
-        m    = medals[i] if i<3 else f"`#{i+1}`"
-        u    = interaction.guild.get_member(uid)
-        name = u.display_name if u else "Unknown"
-        embed.add_field(name=f"{m}  {name}", value=sc(total), inline=False)
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="profile", description="View your sailor economy profile")
+@bot.tree.command(name="profile", description="👤 View your sailor economy profile")
 async def profile(interaction: discord.Interaction, user: discord.Member = None):
     target = user or interaction.user
     data   = get_user(target.id)
     items  = get_inv(target.id)
-    embed  = discord.Embed(title=f"⚓ {target.display_name}'s Profile", color=BLUE)
+    
+    embed = discord.Embed(title=f"⚓ {target.display_name}'s Profile", color=BLUE)
     embed.set_thumbnail(url=target.display_avatar.url)
-    embed.add_field(name="👛 Wallet",       value=sc(data[1]),        inline=True)
-    embed.add_field(name="🏦 Bank",         value=sc(data[2]),        inline=True)
-    embed.add_field(name="💰 Net Worth",    value=sc(data[1]+data[2]),inline=True)
-    embed.add_field(name="⭐ Level",        value=str(data[5]),       inline=True)
-    embed.add_field(name="✨ XP",           value=f"{data[6]} / {data[5]*100}", inline=True)
-    embed.add_field(name="🔥 Streak",       value=f"{data[7]} days",  inline=True)
-    embed.add_field(name="🏆 Total Earned", value=sc(data[4]),        inline=True)
-    embed.add_field(name="🎒 Items Held",   value=str(len(items)),    inline=True)
+    
+    # XP Progress bar
+    xp_progress = (data[6] / (data[5] * 100)) * 10
+    xp_bar = "█" * int(xp_progress) + "░" * (10 - int(xp_progress))
+    
+    embed.add_field(name="💰 Wallet", value=sc(data[1]), inline=True)
+    embed.add_field(name="🏦 Bank", value=f"{sc(data[2])} / {sc(data[3])}", inline=True)
+    embed.add_field(name="💎 Net Worth", value=sc(data[1]+data[2]), inline=True)
+    embed.add_field(name=f"⭐ Level {data[5]}", value=f"`{xp_bar}`\n{data[6]}/{data[5]*100} XP", inline=True)
+    embed.add_field(name="📈 Total Earned", value=sc(data[4]), inline=True)
+    embed.add_field(name="🔥 Streak", value=f"{data[7]} days", inline=True)
+    embed.add_field(name="👥 Invited", value=f"{data[10]} members", inline=True)
+    embed.add_field(name="🎒 Items", value=f"{len(items)} unique", inline=True)
+    
+    embed.set_footer(text=f"Joined: {datetime.fromtimestamp(time.time()).strftime('%m/%d/%Y')}")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="multipliers", description="View your active multipliers")
+@bot.tree.command(name="leaderboard", description="🏆 Top 10 richest sailors")
+async def leaderboard(interaction: discord.Interaction):
+    conn = db()
+    rows = conn.execute("SELECT user_id, wallet+bank FROM users ORDER BY wallet+bank DESC LIMIT 10").fetchall()
+    conn.close()
+    
+    embed = discord.Embed(title="⚓ Sailor Coins Leaderboard", color=GOLD)
+    medals = ["🥇","🥈","🥉"]
+    
+    for i, (uid, total) in enumerate(rows):
+        m    = medals[i] if i<3 else f"`#{i+1}`"
+        u    = interaction.guild.get_member(uid)
+        name = u.display_name if u else "Unknown"
+        embed.add_field(name=f"{m} {name}", value=sc(total), inline=False)
+    
+    embed.set_footer(text="Updated every command")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="multipliers", description="✨ View your active multipliers")
 async def multipliers(interaction: discord.Interaction):
     uid = interaction.user.id
     now = time.time()
@@ -1073,239 +1484,147 @@ async def multipliers(interaction: discord.Interaction):
         (uid, now)
     ).fetchall()
     conn.close()
-    embed = discord.Embed(title="✨ Active Multipliers", color=PURPLE)
+    
+    embed = discord.Embed(title="✨ Your Active Multipliers", color=PURPLE)
+    
     if not rows:
-        embed.description = "No active multipliers. Buy some from `/shop`!"
+        embed.description = "No active multipliers.\n\nBuy some from `/shop` to boost earnings!"
     else:
         for mult_type, value, expires_at in rows:
             remaining = expires_at - now
-            embed.add_field(name=f"x{value:.1f} {mult_type.capitalize()}", value=f"Expires in {fmt_time(remaining)}", inline=True)
+            embed.add_field(
+                name=f"x{value:.1f} {mult_type.capitalize()}",
+                value=f"⏳ {fmt_time(remaining)}",
+                inline=True
+            )
+    
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="stats", description="📊 View your economic statistics")
+async def stats(interaction: discord.Interaction):
+    data = get_user(interaction.user.id)
+    
+    embed = discord.Embed(title="📊 Your Statistics", color=BLUE)
+    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    
+    embed.add_field(name="💰 Total Earned", value=sc(data[4]), inline=True)
+    embed.add_field(name="⭐ Current Level", value=str(data[5]), inline=True)
+    embed.add_field(name="🔥 Streak", value=f"{data[7]} days", inline=True)
+    embed.add_field(name="👥 Invites", value=f"{data[10]} users", inline=True)
+    embed.add_field(name="🎯 Net Worth", value=sc(data[1]+data[2]), inline=True)
+    embed.add_field(name="💎 Bank Capacity", value=f"{data[2]}/{data[3]}", inline=True)
+    
     await interaction.response.send_message(embed=embed)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ADMIN COMMANDS
-# ════════════════════��═════════════════════════════════════════════════════════
+# ADMIN COMMANDS - SETUP & CONFIG
+# ══════════════════════════════════════════════════════════════════════════════
 
-@bot.tree.command(name="give", description="[ADMIN] Give Sailor Coins to a user")
+def admin_only():
+    async def predicate(interaction: discord.Interaction) -> bool:
+        return interaction.user.guild_permissions.administrator
+    return app_commands.check(predicate)
+
+@bot.tree.command(name="setshop", description="[ADMIN] Send interactive shop to channel")
+@app_commands.describe(channel="Channel for the shop")
+@admin_only()
+async def setshop(interaction: discord.Interaction, channel: discord.TextChannel):
+    embed = discord.Embed(
+        title="⚓ Sailor Shop",
+        description="Click buttons below to purchase items!",
+        color=GOLD
+    )
+    
+    conn = db()
+    items = conn.execute("SELECT item_name, price, description, emoji FROM shop ORDER BY price").fetchall()
+    conn.close()
+    
+    for item_name, price, description, emoji in items:
+        embed.add_field(name=f"{emoji} {item_name}", value=f"{sc(price)}\n_{description}_", inline=True)
+    
+    await channel.send(embed=embed, view=ShopView())
+    set_cfg("shop_channel", str(channel.id))
+    
+    embed_confirm = discord.Embed(
+        title="✅ Shop Setup Complete!",
+        description=f"Interactive shop sent to {channel.mention}",
+        color=GREEN
+    )
+    await interaction.response.send_message(embed=embed_confirm, ephemeral=True)
+
+@bot.tree.command(name="setinvitereward", description="[ADMIN] Set coins rewarded per invite")
+@app_commands.describe(amount="Coins to reward")
+@admin_only()
+async def setinvitereward(interaction: discord.Interaction, amount: int):
+    set_cfg("invite_reward", str(amount))
+    embed = discord.Embed(
+        title="✅ Invite Reward Updated",
+        description=f"Users now earn {sc(amount)} per invite!",
+        color=GREEN
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="give", description="[ADMIN] Give coins to a user")
 @app_commands.describe(user="Target user", amount="Amount to give")
 @admin_only()
 async def give(interaction: discord.Interaction, user: discord.Member, amount: int):
-    add_wallet(user.id, amount)
+    add_wallet(user.id, amount, "admin_give")
     embed = discord.Embed(title="✅ Coins Given", color=GREEN)
-    embed.add_field(name="To",     value=user.mention, inline=True)
-    embed.add_field(name="Amount", value=sc(amount),   inline=True)
+    embed.add_field(name="To", value=user.mention, inline=True)
+    embed.add_field(name="Amount", value=sc(amount), inline=True)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="take", description="[ADMIN] Take Sailor Coins from a user")
+@bot.tree.command(name="take", description="[ADMIN] Take coins from a user")
 @app_commands.describe(user="Target user", amount="Amount to remove")
 @admin_only()
 async def take(interaction: discord.Interaction, user: discord.Member, amount: int):
     data   = get_user(user.id)
     actual = min(amount, data[1])
-    add_wallet(user.id, -actual)
+    add_wallet(user.id, -actual, "admin_take")
     embed = discord.Embed(title="✅ Coins Taken", color=RED)
-    embed.add_field(name="From",   value=user.mention, inline=True)
-    embed.add_field(name="Amount", value=sc(actual),   inline=True)
+    embed.add_field(name="From", value=user.mention, inline=True)
+    embed.add_field(name="Amount", value=sc(actual), inline=True)
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="setbalance", description="[ADMIN] Set a user's wallet balance")
-@app_commands.describe(user="Target user", amount="New balance")
-@admin_only()
-async def setbalance(interaction: discord.Interaction, user: discord.Member, amount: int):
-    set_wallet(user.id, max(0, amount))
-    await interaction.response.send_message(f"✅ Set {user.mention}'s wallet to {sc(amount)}.", ephemeral=True)
-
-@bot.tree.command(name="resetuser", description="[ADMIN] Fully reset a user's economy data")
-@app_commands.describe(user="User to reset")
-@admin_only()
-async def resetuser(interaction: discord.Interaction, user: discord.Member):
-    conn = db()
-    for t in ("users","inventory","cooldowns","multipliers"):
-        conn.execute(f"DELETE FROM {t} WHERE user_id=?", (user.id,))
-    conn.commit()
-    conn.close()
-    await interaction.response.send_message(f"✅ {user.mention}'s economy data wiped.", ephemeral=True)
-
-@bot.tree.command(name="setdropchannel", description="[ADMIN] Set the channel for passive coin drops")
-@app_commands.describe(channel="Drop channel")
-@admin_only()
-async def setdropchannel(interaction: discord.Interaction, channel: discord.TextChannel):
-    set_cfg("drop_channel", str(channel.id))
-    await interaction.response.send_message(f"✅ Drops will appear in {channel.mention}!", ephemeral=True)
-
-@bot.tree.command(name="dropconfig", description="[ADMIN] Configure drop amount and interval")
-@app_commands.describe(min_amount="Min drop", max_amount="Max drop", interval_minutes="Minutes between drops")
-@admin_only()
-async def dropconfig(interaction: discord.Interaction, min_amount: int = None, max_amount: int = None, interval_minutes: int = None):
-    if min_amount:    set_cfg("drop_min", str(min_amount))
-    if max_amount:    set_cfg("drop_max", str(max_amount))
-    if interval_minutes and interval_minutes >= 5:
-        set_cfg("drop_interval_minutes", str(interval_minutes))
-        passive_drop.change_interval(minutes=interval_minutes)
-    mn = get_cfg("drop_min","100")
-    mx = get_cfg("drop_max","500")
-    iv = get_cfg("drop_interval_minutes","30")
-    await interaction.response.send_message(
-        f"✅ Drop config: min=**{mn}** max=**{mx}** every=**{iv} min**", ephemeral=True
-    )
-
-@bot.tree.command(name="manualdrop", description="[ADMIN] Trigger a coin drop manually")
-@app_commands.describe(amount="Amount to drop")
-@admin_only()
-async def manualdrop(interaction: discord.Interaction, amount: int):
-    cid = get_cfg("drop_channel")
-    if not cid:
-        return await interaction.response.send_message("❌ No drop channel set.", ephemeral=True)
-    channel = bot.get_channel(int(cid))
-    await interaction.response.send_message(f"✅ Dropping {sc(amount)} in {channel.mention}!", ephemeral=True)
-    embed = discord.Embed(title="⚓ Admin Drop!", description=f"**{sc(amount)}** just dropped!\nType `!claim` to grab it!", color=GOLD)
-    await channel.send(embed=embed)
-    def check(m): return m.channel==channel and not m.author.bot and m.content.lower()=="!claim"
-    try:
-        r = await bot.wait_for("message", check=check, timeout=60.0)
-        add_wallet(r.author.id, amount)
-        await channel.send(embed=discord.Embed(title="🎉 Claimed!", description=f"{r.author.mention} got {sc(amount)}!", color=GREEN))
-    except asyncio.TimeoutError:
-        await channel.send(embed=discord.Embed(title="⌛ Expired", description="Nobody claimed it.", color=RED))
-
-@bot.tree.command(name="addshopitem", description="[ADMIN] Add an item to the shop")
-@app_commands.describe(name="Item name", price="Price", description="Description", item_type="multiplier/upgrade/role/bank/protection", value="Item value string")
-@admin_only()
-async def addshopitem(interaction: discord.Interaction, name: str, price: int, description: str, item_type: str, value: str):
-    conn = db()
-    conn.execute("INSERT OR REPLACE INTO shop VALUES(?,?,?,?,?)", (name, price, description, item_type, value))
-    conn.commit()
-    conn.close()
-    await interaction.response.send_message(f"✅ **{name}** added to shop for {sc(price)}.", ephemeral=True)
-
-@bot.tree.command(name="removeshopitem", description="[ADMIN] Remove an item from the shop")
-@app_commands.describe(name="Item name")
-@admin_only()
-async def removeshopitem(interaction: discord.Interaction, name: str):
-    conn = db()
-    conn.execute("DELETE FROM shop WHERE LOWER(item_name)=LOWER(?)", (name,))
-    conn.commit()
-    conn.close()
-    await interaction.response.send_message(f"✅ **{name}** removed from shop.", ephemeral=True)
-
-@bot.tree.command(name="economyban", description="[ADMIN] Ban/unban a user from the economy")
+@bot.tree.command(name="economyban", description="[ADMIN] Ban/unban user from economy")
 @app_commands.describe(user="Target user")
 @admin_only()
 async def economyban(interaction: discord.Interaction, user: discord.Member):
     conn = db()
     if conn.execute("SELECT 1 FROM banned_users WHERE user_id=?", (user.id,)).fetchone():
         conn.execute("DELETE FROM banned_users WHERE user_id=?", (user.id,))
-        msg, color = f"✅ {user.mention} **unbanned** from economy.", GREEN
+        msg, color = f"✅ {user.mention} **unbanned**", GREEN
     else:
         conn.execute("INSERT INTO banned_users VALUES(?)", (user.id,))
-        msg, color = f"🚫 {user.mention} **banned** from economy.", RED
+        msg, color = f"🚫 {user.mention} **banned**", RED
     conn.commit()
     conn.close()
-    await interaction.response.send_message(embed=discord.Embed(description=msg, color=color))
+    
+    embed = discord.Embed(description=msg, color=color)
+    await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="resetcooldowns", description="[ADMIN] Reset all cooldowns for a user")
-@app_commands.describe(user="Target user")
-@admin_only()
-async def resetcooldowns(interaction: discord.Interaction, user: discord.Member):
-    reset_all_cd(user.id)
-    await interaction.response.send_message(f"✅ All cooldowns reset for {user.mention}.", ephemeral=True)
-
-@bot.tree.command(name="setmultiplier", description="[ADMIN] Give a multiplier to a user")
-@app_commands.describe(user="Target user", mult_type="coins or luck", value="Multiplier value (e.g. 2.0)", hours="Duration in hours")
-@admin_only()
-async def setmultiplier(interaction: discord.Interaction, user: discord.Member, mult_type: str, value: float, hours: float):
-    set_mult(user.id, mult_type, value, int(hours * 3600))
-    await interaction.response.send_message(
-        f"✅ Set **x{value} {mult_type}** for {user.mention} for **{hours} hours**.", ephemeral=True
-    )
-
-@bot.tree.command(name="giveitem", description="[ADMIN] Give an item directly to a user's inventory")
-@app_commands.describe(user="Target user", item="Item name", quantity="Quantity")
-@admin_only()
-async def giveitem(interaction: discord.Interaction, user: discord.Member, item: str, quantity: int = 1):
-    add_inv(user.id, item, quantity)
-    await interaction.response.send_message(f"✅ Gave **{quantity}x {item}** to {user.mention}.", ephemeral=True)
-
-@bot.tree.command(name="economystats", description="[ADMIN] View global economy statistics")
+@bot.tree.command(name="economystats", description="[ADMIN] View global economy")
 @admin_only()
 async def economystats(interaction: discord.Interaction):
     conn = db()
     s = conn.execute("SELECT COUNT(*), SUM(wallet), SUM(bank), SUM(total_earned) FROM users").fetchone()
     b = conn.execute("SELECT COUNT(*) FROM banned_users").fetchone()[0]
     r = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    i = conn.execute("SELECT COUNT(*) FROM invites").fetchone()[0]
     conn.close()
+    
     embed = discord.Embed(title="📊 Economy Statistics", color=BLUE)
-    embed.add_field(name="👥 Players",         value=str(s[0]),           inline=True)
-    embed.add_field(name="🚫 Banned",          value=str(b),              inline=True)
-    embed.add_field(name="💰 In Wallets",      value=sc(s[1] or 0),      inline=True)
-    embed.add_field(name="🏦 In Banks",        value=sc(s[2] or 0),      inline=True)
-    embed.add_field(name="📈 Ever Earned",     value=sc(s[3] or 0),      inline=True)
-    embed.add_field(name="🛍️ Total Items Held",value=str(r),              inline=True)
-    embed.add_field(name="🏧 In Circulation",  value=sc((s[1] or 0)+(s[2] or 0)), inline=True)
+    embed.add_field(name="👥 Players", value=str(s[0]), inline=True)
+    embed.add_field(name="🚫 Banned", value=str(b), inline=True)
+    embed.add_field(name="💰 In Wallets", value=sc(s[1] or 0), inline=True)
+    embed.add_field(name="🏦 In Banks", value=sc(s[2] or 0), inline=True)
+    embed.add_field(name="📈 Ever Earned", value=sc(s[3] or 0), inline=True)
+    embed.add_field(name="🛍️ Items Held", value=str(r), inline=True)
+    embed.add_field(name="👥 Total Invites", value=str(i), inline=True)
+    embed.add_field(name="🏧 In Circulation", value=sc((s[1] or 0)+(s[2] or 0)), inline=True)
+    
     await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="broadcast", description="[ADMIN] Send an announcement to the drop channel")
-@app_commands.describe(message="Your announcement text")
-@admin_only()
-async def broadcast(interaction: discord.Interaction, message: str):
-    cid = get_cfg("drop_channel")
-    if not cid:
-        return await interaction.response.send_message("❌ No drop channel set.", ephemeral=True)
-    channel = bot.get_channel(int(cid))
-    embed = discord.Embed(title="📢 Announcement", description=message, color=GOLD)
-    embed.set_footer(text=f"From {interaction.user.display_name}")
-    await channel.send(embed=embed)
-    await interaction.response.send_message("✅ Broadcast sent!", ephemeral=True)
-
-@bot.tree.command(name="wipeeconomy", description="[ADMIN] ⚠️ Permanently wipe ALL economy data")
-@admin_only()
-async def wipeeconomy(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="⚠️ DANGER ZONE",
-        description="This deletes **ALL** economy data permanently.\nType `CONFIRM WIPE` in chat within 30s to proceed.",
-        color=RED
-    )
-    await interaction.response.send_message(embed=embed)
-    def check(m): return m.author==interaction.user and m.channel==interaction.channel and m.content=="CONFIRM WIPE"
-    try:
-        await bot.wait_for("message", check=check, timeout=30.0)
-        conn = db()
-        for t in ("users","inventory","cooldowns","multipliers","transactions"):
-            conn.execute(f"DELETE FROM {t}")
-        conn.commit()
-        conn.close()
-        await interaction.followup.send(embed=discord.Embed(title="💀 Economy Wiped", description="All data deleted.", color=RED))
-    except asyncio.TimeoutError:
-        await interaction.followup.send("❌ Wipe cancelled.", ephemeral=True)
-
-@bot.tree.command(name="addxp", description="[ADMIN] Add XP to a user")
-@app_commands.describe(user="Target user", amount="XP to add")
-@admin_only()
-async def addxp(interaction: discord.Interaction, user: discord.Member, amount: int):
-    ensure_user(user.id)
-    conn = db()
-    conn.execute("UPDATE users SET xp=xp+? WHERE user_id=?", (amount, user.id))
-    conn.commit()
-    conn.close()
-    await interaction.response.send_message(f"✅ Added **{amount} XP** to {user.mention}.", ephemeral=True)
-
-@bot.tree.command(name="setlevel", description="[ADMIN] Set a user's level")
-@app_commands.describe(user="Target user", level="New level")
-@admin_only()
-async def setlevel(interaction: discord.Interaction, user: discord.Member, level: int):
-    ensure_user(user.id)
-    conn = db()
-    conn.execute("UPDATE users SET level=?, xp=0 WHERE user_id=?", (max(1, level), user.id))
-    conn.commit()
-    conn.close()
-    await interaction.response.send_message(f"✅ Set {user.mention} to **Level {level}**.", ephemeral=True)
-
-@bot.tree.command(name="synccommands", description="[ADMIN] Force sync slash commands")
-@admin_only()
-async def synccommands(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    synced = await bot.tree.sync()
-    await interaction.followup.send(f"✅ Synced {len(synced)} commands.", ephemeral=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ERROR HANDLER
@@ -1314,7 +1633,7 @@ async def synccommands(interaction: discord.Interaction):
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
     if isinstance(error, app_commands.CheckFailure):
-        msg = "❌ You need **Administrator** permission to use that command."
+        msg = "❌ You need **Administrator** permission."
     else:
         msg = f"❌ Error: `{error}`"
         print(f"[ERROR] {error}")
@@ -1323,7 +1642,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     except Exception:
         await interaction.followup.send(msg, ephemeral=True)
 
-# ══════════════════════════════════════════════════════════════════��═══════════
+# ══════════════════════════════════════════════════════════���═══════════════════
 # ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
