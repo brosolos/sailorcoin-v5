@@ -1,14 +1,14 @@
-name=main.py
-"""
-⚓ SAILOR COINS — Discord Economy Bot v9 ULTIMATE
-=====================================
-✨ 80+ COMMANDS WITH 20+ EARNING COMMANDS
-✨ TRADE SYSTEM — Player-to-Player Trading
-✨ INVESTMENT SYSTEM — 4 Tiers with ROI
-✨ TREASURE EVERY 10 SECONDS
-✨ BEAUTIFUL ANIMATED EMBEDS
-✨ FULL DATABASE & LOGGING
-"""
+name=main.py url=https://github.com/brosolos/sailorcoin-v5/blob/main/main.py
+
+# ⚓ SAILOR COINS — Discord Economy Bot v10 ULTIMATE
+# ════════════════════════════════════════════════════════════════
+# ✨ 30+ EARNING COMMANDS
+# ✨ TRADE SYSTEM — Player-to-Player Trading
+# ✨ INVESTMENT SYSTEM — 4 Tiers with ROI
+# ✨ TREASURE EVERY 10 SECONDS
+# ✨ BEAUTIFUL ANIMATED EMBEDS
+# ✨ FULL DATABASE & LOGGING
+# ════════════════════════════════════════════════════════════════
 
 import discord
 from discord import app_commands, ui
@@ -85,14 +85,14 @@ class GIFs:
     BANNED = "https://media.giphy.com/media/3o6wrvdHFbwBrUFenu/giphy.gif"
     INVEST_SUCCESS = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
     TRADE_SUCCESS = "https://media.giphy.com/media/3o6gDWzmAzrpi5DQU8/giphy.gif"
+    PARTY = "https://media.giphy.com/media/l0HlQaQ6gWfllcjDO/giphy.gif"
+    DANCE = "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif"
 
 # ════════════════════════════════════════════════════════════════
 # 🎯 MODERN UI COMPONENTS
 # ════════════════════════════════════════════════════════════════
 
 class ModernUI:
-    """Modern UI helper class"""
-    
     @staticmethod
     def progress_bar(current: int, maximum: int, length: int = 10) -> str:
         if maximum <= 0:
@@ -207,7 +207,6 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Users table
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         user_id      INTEGER PRIMARY KEY,
         wallet       INTEGER DEFAULT 0,
@@ -220,7 +219,6 @@ def init_db():
         last_daily   REAL    DEFAULT 0
     )""")
 
-    # Cooldowns table
     c.execute("""CREATE TABLE IF NOT EXISTS cooldowns (
         user_id   INTEGER,
         command   TEXT,
@@ -228,7 +226,6 @@ def init_db():
         PRIMARY KEY (user_id, command)
     )""")
 
-    # Inventory table
     c.execute("""CREATE TABLE IF NOT EXISTS inventory (
         user_id   INTEGER,
         item_name TEXT,
@@ -236,7 +233,6 @@ def init_db():
         PRIMARY KEY (user_id, item_name)
     )""")
 
-    # Trades table
     c.execute("""CREATE TABLE IF NOT EXISTS trades (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         user_from   INTEGER,
@@ -251,7 +247,6 @@ def init_db():
         timestamp   REAL
     )""")
 
-    # Investments table
     c.execute("""CREATE TABLE IF NOT EXISTS investments (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         name        TEXT,
@@ -264,7 +259,6 @@ def init_db():
         status      TEXT DEFAULT 'active'
     )""")
 
-    # Investment accounts table
     c.execute("""CREATE TABLE IF NOT EXISTS investor_accounts (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id       INTEGER,
@@ -275,12 +269,10 @@ def init_db():
         auto_compound BOOLEAN DEFAULT 0
     )""")
 
-    # Banned users table
     c.execute("""CREATE TABLE IF NOT EXISTS banned_users (
         user_id INTEGER PRIMARY KEY
     )""")
 
-    # Config table
     c.execute("""CREATE TABLE IF NOT EXISTS config (
         key   TEXT PRIMARY KEY,
         value TEXT
@@ -291,18 +283,15 @@ def init_db():
     print(f"✅ Database initialized!")
 
 def db():
-    """Get database connection"""
     return sqlite3.connect(DB_PATH)
 
 def ensure_user(user_id: int):
-    """Ensure user exists"""
     conn = db()
     conn.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit()
     conn.close()
 
 def get_user(user_id: int):
-    """Get user data"""
     ensure_user(user_id)
     conn = db()
     row = conn.execute("SELECT * FROM users WHERE user_id=?", (user_id,)).fetchone()
@@ -310,7 +299,6 @@ def get_user(user_id: int):
     return row
 
 def add_wallet(user_id: int, amount: int):
-    """Add coins to wallet"""
     ensure_user(user_id)
     conn = db()
     conn.execute("UPDATE users SET wallet=wallet+? WHERE user_id=?", (amount, user_id))
@@ -320,49 +308,42 @@ def add_wallet(user_id: int, amount: int):
     conn.close()
 
 def is_banned(user_id: int) -> bool:
-    """Check if banned"""
     conn = db()
     r = conn.execute("SELECT 1 FROM banned_users WHERE user_id=?", (user_id,)).fetchone()
     conn.close()
     return r is not None
 
 def get_cfg(key: str, default=None):
-    """Get config"""
     conn = db()
     r = conn.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()
     conn.close()
     return r[0] if r else default
 
 def set_cfg(key: str, value: str):
-    """Set config"""
     conn = db()
     conn.execute("INSERT OR REPLACE INTO config VALUES(?,?)", (key, value))
     conn.commit()
     conn.close()
 
 def get_cd(user_id: int, cmd: str) -> float:
-    """Get cooldown"""
     conn = db()
     r = conn.execute("SELECT last_used FROM cooldowns WHERE user_id=? AND command=?", (user_id, cmd)).fetchone()
     conn.close()
     return r[0] if r else 0.0
 
 def set_cd(user_id: int, cmd: str):
-    """Set cooldown"""
     conn = db()
     conn.execute("INSERT OR REPLACE INTO cooldowns VALUES(?,?,?)", (user_id, cmd, time.time()))
     conn.commit()
     conn.close()
 
 def check_cd(user_id: int, cmd: str, secs: int):
-    """Check cooldown"""
     elapsed = time.time() - get_cd(user_id, cmd)
     if elapsed < secs:
         return True, secs - elapsed
     return False, 0.0
 
 def fmt_time(secs: float) -> str:
-    """Format time"""
     s = int(secs)
     if s < 60:
         return f"**{s}**s"
@@ -488,7 +469,7 @@ async def set_drop_channel(interaction: discord.Interaction, channel: discord.Te
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ════════════════════════════════════════════════════════════════
-# 💰 EARNING COMMANDS (20+)
+# 💰 EARNING COMMANDS (30+)
 # ════════════════════════════════════════════════════════════════
 
 @bot.tree.command(name="fish", description="🎣 Go fishing for coins")
@@ -913,9 +894,363 @@ async def dive(interaction: discord.Interaction):
     embed = EmbedBuilder.reward("Diving Complete!", amount, interaction.user, GIFs.WIN_BIG)
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="perform", description="🎭 Perform acts in public")
+async def perform(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "perform", 75)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    amount = random.randint(200, 550)
+    add_wallet(uid, amount)
+    set_cd(uid, "perform")
+    
+    embed = EmbedBuilder.reward("Performance Successful!", amount, interaction.user, GIFs.DANCE)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="craft", description="⚙️ Craft items to sell")
+async def craft(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "craft", 100)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    amount = random.randint(300, 700)
+    add_wallet(uid, amount)
+    set_cd(uid, "craft")
+    
+    embed = EmbedBuilder.reward("Crafting Complete!", amount, interaction.user, GIFs.WORK_SUCCESS)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="compete", description="🏆 Join competitions")
+async def compete(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "compete", 130)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if random.random() > 0.5:
+        amount = random.randint(400, 1000)
+        add_wallet(uid, amount)
+        embed = EmbedBuilder.reward("Competition Won!", amount, interaction.user, GIFs.WIN_BIG)
+    else:
+        amount = random.randint(50, 200)
+        add_wallet(uid, amount)
+        embed = discord.Embed(
+            title="🥈 Participation Reward",
+            description=f"Got {ModernUI.money_display(amount)} for participating!",
+            color=Theme.INFO
+        )
+        embed.set_image(url=GIFs.WORK_SUCCESS)
+    
+    set_cd(uid, "compete")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="quest", description="🧩 Complete random quests")
+async def quest(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "quest", 60)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    quests = [
+        ("Find Lost Treasure", 300, 600),
+        ("Help a Villager", 200, 400),
+        ("Explore the Cave", 250, 500),
+        ("Defeat a Dragon", 400, 900),
+        ("Solve a Puzzle", 150, 350),
+    ]
+    
+    quest_name, min_reward, max_reward = random.choice(quests)
+    amount = random.randint(min_reward, max_reward)
+    add_wallet(uid, amount)
+    set_cd(uid, "quest")
+    
+    embed = EmbedBuilder.reward(f"Quest Complete: {quest_name}", amount, interaction.user, GIFs.WORK_SUCCESS)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="crime", description="💀 Commit a crime (risky!)")
+async def crime(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "crime", 90)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if random.random() > 0.6:
+        amount = random.randint(500, 1500)
+        add_wallet(uid, amount)
+        set_cd(uid, "crime")
+        embed = EmbedBuilder.reward("Heist Successful!", amount, interaction.user, GIFs.CRIME_SUCCESS)
+    else:
+        amount = random.randint(100, 400)
+        add_wallet(uid, -amount)
+        set_cd(uid, "crime")
+        embed = discord.Embed(
+            title="🚔 Caught by Police!",
+            description=f"You lost {ModernUI.money_display(amount)}",
+            color=Theme.ERROR
+        )
+        embed.set_image(url=GIFs.CRIME_FAIL)
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="gamble", description="🎲 Gamble your coins (HIGH RISK)")
+@app_commands.describe(amount="Amount to gamble")
+async def gamble(interaction: discord.Interaction, amount: int):
+    uid = interaction.user.id
+    data = get_user(uid)
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if data[1] < amount:
+        embed = EmbedBuilder.error("Insufficient Funds", f"You need {ModernUI.money_display(amount)}", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "gamble", 30)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    roll = random.randint(1, 100)
+    
+    if roll > 70:
+        winnings = int(amount * 2)
+        add_wallet(uid, winnings)
+        embed = EmbedBuilder.reward("JACKPOT!", winnings, interaction.user, GIFs.WIN_JACKPOT)
+    elif roll > 50:
+        winnings = int(amount * 1.5)
+        add_wallet(uid, winnings)
+        embed = EmbedBuilder.reward("Big Win!", winnings, interaction.user, GIFs.WIN_BIG)
+    elif roll > 30:
+        add_wallet(uid, 0)
+        embed = discord.Embed(
+            title="😐 Break Even",
+            description="You got your money back!",
+            color=Theme.INFO
+        )
+    else:
+        add_wallet(uid, -amount)
+        embed = discord.Embed(
+            title="💔 Lost!",
+            description=f"Lost {ModernUI.money_display(amount)}",
+            color=Theme.ERROR
+        )
+        embed.set_image(url=GIFs.LOSE)
+    
+    set_cd(uid, "gamble")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="rob", description="🔫 Rob another player (risky!)")
+@app_commands.describe(victim="Player to rob")
+async def rob(interaction: discord.Interaction, victim: discord.Member):
+    uid = interaction.user.id
+    victim_id = victim.id
+    
+    if is_banned(uid) or is_banned(victim_id):
+        embed = EmbedBuilder.error("Banned", "One or both users are banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if victim.bot:
+        embed = EmbedBuilder.error("Invalid", "Can't rob bots!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "rob", 120)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    victim_data = get_user(victim_id)
+    victim_wallet = victim_data[1]
+    
+    if victim_wallet < 100:
+        embed = EmbedBuilder.error("Too Poor", f"{victim.mention} doesn't have enough coins!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if random.random() > 0.6:
+        steal_amount = random.randint(50, int(victim_wallet * 0.3))
+        add_wallet(uid, steal_amount)
+        add_wallet(victim_id, -steal_amount)
+        embed = discord.Embed(
+            title=f"🔫 Robbed {victim.name}!",
+            description=f"Stole {ModernUI.money_display(steal_amount)}",
+            color=Theme.GOLD
+        )
+        embed.set_image(url=GIFs.CRIME_SUCCESS)
+    else:
+        fine = random.randint(100, 300)
+        add_wallet(uid, -fine)
+        embed = discord.Embed(
+            title="🚔 Rob Failed!",
+            description=f"Caught and fined {ModernUI.money_display(fine)}!",
+            color=Theme.ERROR
+        )
+        embed.set_image(url=GIFs.CRIME_FAIL)
+    
+    set_cd(uid, "rob")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="daily", description="📅 Get daily reward")
+async def daily(interaction: discord.Interaction):
+    uid = interaction.user.id
+    data = get_user(uid)
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    last_daily = data[9]
+    time_now = time.time()
+    
+    if time_now - last_daily < 86400:
+        remaining = 86400 - (time_now - last_daily)
+        embed = discord.Embed(
+            title="⏰ Already Claimed",
+            description=f"Come back in {fmt_time(remaining)}",
+            color=Theme.WARNING
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    amount = 500
+    add_wallet(uid, amount)
+    conn = db()
+    conn.execute("UPDATE users SET last_daily=? WHERE user_id=?", (time_now, uid))
+    conn.commit()
+    conn.close()
+    
+    embed = EmbedBuilder.reward("Daily Reward!", amount, interaction.user, GIFs.DAILY_REWARD)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="scratch", description="🎫 Scratch-off lottery tickets")
+async def scratch(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "scratch", 300)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    roll = random.randint(1, 100)
+    if roll > 90:
+        amount = random.randint(2000, 5000)
+        gif = GIFs.WIN_JACKPOT
+    elif roll > 75:
+        amount = random.randint(500, 1500)
+        gif = GIFs.WIN_BIG
+    else:
+        amount = 0
+        gif = GIFs.LOSE
+    
+    if amount > 0:
+        add_wallet(uid, amount)
+        embed = EmbedBuilder.reward("Scratch Won!", amount, interaction.user, gif)
+    else:
+        embed = discord.Embed(
+            title="❌ No Win",
+            description="Better luck next time!",
+            color=Theme.ERROR
+        )
+        embed.set_image(url=gif)
+    
+    set_cd(uid, "scratch")
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="explore", description="🗺️ Explore unknown territories")
+async def explore(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "explore", 140)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    explorations = [
+        ("🏔️ Mountain", 250, 700),
+        ("🏝️ Island", 300, 800),
+        ("🌲 Forest", 200, 600),
+        ("🏜️ Desert", 350, 950),
+        ("🗻 Volcano", 400, 1200),
+    ]
+    
+    location, min_reward, max_reward = random.choice(explorations)
+    amount = random.randint(min_reward, max_reward)
+    add_wallet(uid, amount)
+    set_cd(uid, "explore")
+    
+    embed = EmbedBuilder.reward(f"Explored {location}", amount, interaction.user, GIFs.WORK_SUCCESS)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="fish_tournament", description="🎣 Enter fishing tournament")
+async def fish_tournament(interaction: discord.Interaction):
+    uid = interaction.user.id
+    
+    if is_banned(uid):
+        embed = EmbedBuilder.error("Banned", "You're banned!", interaction.user)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    on_cd, rem = check_cd(uid, "fish_tournament", 3600)
+    if on_cd:
+        embed = discord.Embed(title="⏰ On Cooldown", description=f"Try again in {fmt_time(rem)}", color=Theme.WARNING)
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if random.random() > 0.5:
+        amount = random.randint(800, 2000)
+        embed = EmbedBuilder.reward("Tournament Victory!", amount, interaction.user, GIFs.WIN_BIG)
+    else:
+        amount = random.randint(100, 300)
+        embed = discord.Embed(
+            title="🏅 Tournament Participation",
+            description=f"Got {ModernUI.money_display(amount)} for participation!",
+            color=Theme.INFO
+        )
+        embed.set_image(url=GIFs.WORK_SUCCESS)
+    
+    add_wallet(uid, amount)
+    set_cd(uid, "fish_tournament")
+    await interaction.response.send_message(embed=embed)
+
 # ════════════════════════════════════════════════════════════════
 # 🔄 TRADE SYSTEM
-# ════════════════════════════════════════════════════════════════
+# ═══════════════════════���════════════════════════════════════════
 
 @bot.tree.command(name="trade_request", description="🔄 Request a trade")
 @app_commands.describe(
@@ -1153,7 +1488,7 @@ async def portfolio(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-# ════════════════════════════════════════════════════════════════
+# ═══════════════════��════════════════════════════════════════════
 # 💰 UTILITY COMMANDS
 # ════════════════════════════════════════════════════════════════
 
@@ -1179,7 +1514,7 @@ async def balance(interaction: discord.Interaction, user: discord.Member = None)
 
 # ════════════════════════════════════════════════════════════════
 # 🚀 STARTUP
-# ════════════════════════════════════════════════════════════════
+# ��═══════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     init_db()
