@@ -1,4 +1,3 @@
-name=main.py url=https://github.com/brosolos/sailorcoin-v5/blob/main/main.py
 
 # ⚓ SAILOR COINS — Discord Economy Bot v10 ULTIMATE
 # ════════════════════════════════════════════════════════════════
