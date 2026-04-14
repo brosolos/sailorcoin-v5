@@ -1,12 +1,12 @@
-
 """
-⚓ SAILOR COINS — Discord Economy Bot v4
+⚓ SAILOR COINS — Discord Economy Bot v5
 =====================================
 PREMIUM FEATURES:
   - Animated GIFs for all commands
   - Beautiful professional embeds
   - Custom role shop items
   - Advanced economy system
+  - COMPREHENSIVE LOGGING SYSTEM ⭐
   - Admin dashboard
   - Interactive shop GUI
   - 60+ commands
@@ -51,7 +51,7 @@ ORANGE = 0xFF8C00
 DARK_BLUE = 0x1f1f2e
 AQUA = 0x00D4FF
 
-# ─── GIF URLs - Animated Responses ────────────────────────────────────────────
+# ─── GIF URLs ────────��───────────────────────────────────────────────────────
 
 GIFS = {
     "fish": [
@@ -99,11 +99,42 @@ GIFS = {
         "https://media.giphy.com/media/Nyx6NFlAhJx8Y/giphy.gif",
         "https://media.giphy.com/media/l0MYt5jPR6QX5pnqM/giphy.gif",
     ],
-    "duel": [
-        "https://media.giphy.com/media/l0HlTy9x8FZo0XO1i/giphy.gif",
-        "https://media.giphy.com/media/26uf0EUf6YXklWwgE/giphy.gif",
-    ],
 }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOGGING SYSTEM
+# ═════════════════════════════��════════════════════════════════════════════════
+
+async def log_to_channel(title: str, description: str, color: int, user: discord.Member = None, extra_fields: dict = None):
+    """Send a log message to the logs channel"""
+    log_channel_id = get_cfg("log_channel")
+    if not log_channel_id:
+        return
+    
+    channel = bot.get_channel(int(log_channel_id))
+    if not channel:
+        return
+    
+    embed = discord.Embed(
+        title=f"📋 {title}",
+        description=description,
+        color=color,
+        timestamp=datetime.now()
+    )
+    
+    if user:
+        embed.set_author(name=f"{user.display_name} ({user.id})", icon_url=user.display_avatar.url)
+    
+    if extra_fields:
+        for field_name, field_value in extra_fields.items():
+            embed.add_field(name=field_name, value=field_value, inline=True)
+    
+    embed.set_footer(text="Sailor Coins Economy Logger")
+    
+    try:
+        await channel.send(embed=embed)
+    except Exception as e:
+        print(f"Failed to log: {e}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DATABASE - ENHANCED WITH ROLES
@@ -183,12 +214,12 @@ def init_db():
         PRIMARY KEY (inviter_id, invitee_id)
     )""")
 
-    c.execute("""CREATE TABLE IF NOT EXISTS custom_roles (
-        role_id     INTEGER PRIMARY KEY,
-        item_name   TEXT,
-        price       INTEGER,
-        description TEXT,
-        emoji       TEXT
+    c.execute("""CREATE TABLE IF NOT EXISTS shop_purchases (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id   INTEGER,
+        item_name TEXT,
+        price     INTEGER,
+        timestamp REAL
     )""")
 
     # Default shop items with images
@@ -215,6 +246,8 @@ def init_db():
     c.execute("INSERT OR IGNORE INTO config VALUES ('drop_max','500')")
     c.execute("INSERT OR IGNORE INTO config VALUES ('invite_reward','500')")
     c.execute("INSERT OR IGNORE INTO config VALUES ('shop_channel','')")
+    c.execute("INSERT OR IGNORE INTO config VALUES ('log_channel','')")
+    c.execute("INSERT OR IGNORE INTO config VALUES ('drop_channel','')")
 
     conn.commit()
     conn.close()
@@ -372,6 +405,14 @@ def remove_shop_item(name: str):
     conn.commit()
     conn.close()
 
+def log_purchase(user_id: int, item_name: str, price: int):
+    """Log a shop purchase"""
+    conn = db()
+    conn.execute("INSERT INTO shop_purchases (user_id, item_name, price, timestamp) VALUES (?,?,?,?)",
+                 (user_id, item_name, price, time.time()))
+    conn.commit()
+    conn.close()
+
 # ─── Formatting helpers ───────────────────────────────────────────────────────
 
 def sc(amount: int) -> str:
@@ -419,7 +460,6 @@ class ShopButton(ui.Button):
             embed.set_footer(text="Earn more by using /fish, /mine, /work!")
             return await interaction.response.send_message(embed=embed, ephemeral=True)
         
-        # Get item details
         conn = db()
         row = conn.execute("SELECT item_name, price, description, item_type, value, emoji, image_url FROM shop WHERE item_id=?", (self.item_id,)).fetchone()
         conn.close()
@@ -429,6 +469,20 @@ class ShopButton(ui.Button):
         
         item_name, price, desc, item_type, value, emoji, image_url = row
         add_wallet(uid, -price)
+        log_purchase(uid, item_name, price)
+        
+        # Log to channel
+        await log_to_channel(
+            title="🛍️ SHOP PURCHASE",
+            description=f"{interaction.user.mention} purchased **{item_name}**",
+            color=GOLD,
+            user=interaction.user,
+            extra_fields={
+                "💰 Price": f"{sc(price)} ⚓",
+                "📦 Type": item_type,
+                "💵 New Balance": f"{sc(data[1] - price)} ⚓"
+            }
+        )
         
         if item_type == "multiplier":
             parts = value.split(":")
@@ -474,6 +528,17 @@ class ShopButton(ui.Button):
                     title=f"✅ {emoji} Role Granted!",
                     description=f"🎖️ You now have the **{value}** role!",
                     color=GREEN
+                )
+                # Log role purchase
+                await log_to_channel(
+                    title="🎖️ ROLE PURCHASE",
+                    description=f"{interaction.user.mention} purchased and received role **{value}**",
+                    color=PURPLE,
+                    user=interaction.user,
+                    extra_fields={
+                        "💰 Price": f"{sc(price)} ⚓",
+                        "🎖️ Role": value
+                    }
                 )
             else:
                 add_wallet(uid, price)
@@ -523,6 +588,17 @@ async def on_ready():
     
     if not passive_drop.is_running():
         passive_drop.start()
+    
+    # Log bot startup
+    await log_to_channel(
+        title="🚀 BOT STARTUP",
+        description=f"Sailor Coins bot is now online!",
+        color=GREEN,
+        extra_fields={
+            "⏰ Time": datetime.now().strftime("%m/%d/%Y %H:%M:%S"),
+            "✅ Status": "Online"
+        }
+    )
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -553,6 +629,19 @@ async def on_message(message: discord.Message):
                 lvl_embed.set_thumbnail(url=message.author.display_avatar.url)
                 lvl_embed.set_image(url=get_gif("levelup"))
                 add_wallet(uid, row[1] * 50, "level_up")
+                
+                # Log level up
+                await log_to_channel(
+                    title="⭐ LEVEL UP",
+                    description=f"{message.author.mention} reached Level {row[1]+1}",
+                    color=GOLD,
+                    user=message.author,
+                    extra_fields={
+                        "📈 New Level": str(row[1]+1),
+                        "🎁 Reward": f"{sc(row[1]*50)} ⚓"
+                    }
+                )
+                
                 await message.channel.send(embed=lvl_embed, delete_after=15)
             except:
                 pass
@@ -589,6 +678,19 @@ async def passive_drop():
     try:
         resp = await bot.wait_for("message", check=check, timeout=60.0)
         add_wallet(resp.author.id, amount, "treasure_drop")
+        
+        # Log treasure drop
+        await log_to_channel(
+            title="🎁 TREASURE CLAIMED",
+            description=f"{resp.author.mention} claimed a treasure drop!",
+            color=GOLD,
+            user=resp.author,
+            extra_fields={
+                "💰 Amount": f"{sc(amount)} ⚓",
+                "⏱️ Time": f"{datetime.now().strftime('%H:%M:%S')}"
+            }
+        )
+        
         embed = discord.Embed(
             title="🎉 CHEST CLAIMED!",
             description=f"{resp.author.mention} snatched {sc(amount)} ⚓!",
@@ -634,12 +736,17 @@ async def admin_setup(interaction: discord.Interaction):
         inline=False
     )
     embed.add_field(
-        name="Step 3️⃣ - Send Shop",
+        name="Step 3️⃣ - Logs Channel",
+        value="`/set_log_channel #channel`\n(Where all activity is logged)",
+        inline=False
+    )
+    embed.add_field(
+        name="Step 4️⃣ - Send Shop",
         value="`/send_shop`\n(Deploy the interactive shop)",
         inline=False
     )
     embed.add_field(
-        name="Step 4️⃣ - Configure",
+        name="Step 5️⃣ - Configure",
         value="`/set_invite_reward 500`\n(Set coins per invite)",
         inline=False
     )
@@ -660,6 +767,19 @@ async def set_drop_channel(interaction: discord.Interaction, channel: discord.Te
     )
     embed.add_field(name="Frequency", value="Every 30 minutes", inline=True)
     embed.add_field(name="Amount", value="100-500 ⚓", inline=True)
+    
+    # Log setup
+    await log_to_channel(
+        title="⚙️ CONFIG CHANGE",
+        description=f"Drop channel set to {channel.mention}",
+        color=BLUE,
+        user=interaction.user,
+        extra_fields={
+            "📝 Setting": "drop_channel",
+            "✅ Status": "Updated"
+        }
+    )
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="set_shop_channel", description="[ADMIN] Set shop GUI channel")
@@ -673,6 +793,45 @@ async def set_shop_channel(interaction: discord.Interaction, channel: discord.Te
         color=GREEN
     )
     embed.set_footer(text="Use /send_shop to deploy")
+    
+    # Log setup
+    await log_to_channel(
+        title="⚙️ CONFIG CHANGE",
+        description=f"Shop channel set to {channel.mention}",
+        color=BLUE,
+        user=interaction.user,
+        extra_fields={
+            "📝 Setting": "shop_channel",
+            "✅ Status": "Updated"
+        }
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="set_log_channel", description="[ADMIN] Set logs channel")
+@app_commands.describe(channel="Channel for logs")
+@admin_only()
+async def set_log_channel(interaction: discord.Interaction, channel: discord.TextChannel):
+    set_cfg("log_channel", str(channel.id))
+    embed = discord.Embed(
+        title="✅ Log Channel Set!",
+        description=f"All activity will be logged to {channel.mention}",
+        color=GREEN
+    )
+    embed.add_field(name="📋 Logged Events", value="Shop purchases, level-ups, bans, transfers, and more", inline=False)
+    embed.set_footer(text="Logs are now active!")
+    
+    await log_to_channel(
+        title="⚙️ CONFIG CHANGE",
+        description=f"Log channel set to {channel.mention}",
+        color=BLUE,
+        user=interaction.user,
+        extra_fields={
+            "📝 Setting": "log_channel",
+            "✅ Status": "Updated"
+        }
+    )
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="send_shop", description="[ADMIN] Send interactive shop")
@@ -730,6 +889,18 @@ async def send_shop(interaction: discord.Interaction):
     
     await channel.send(embed=embed, view=ShopView())
     
+    # Log shop deployment
+    await log_to_channel(
+        title="🛍️ SHOP DEPLOYED",
+        description=f"Interactive shop sent to {channel.mention}",
+        color=BLUE,
+        user=interaction.user,
+        extra_fields={
+            "📦 Items": str(len(items)),
+            "📍 Channel": channel.mention
+        }
+    )
+    
     confirm_embed = discord.Embed(
         title="✅ Shop Deployed!",
         description=f"Interactive shop sent to {channel.mention}",
@@ -757,6 +928,20 @@ async def add_item(interaction: discord.Interaction, name: str, price: int, desc
         embed.add_field(name="💰 Price", value=f"{sc(price)} ⚓", inline=True)
         embed.add_field(name="📝 Type", value=item_type, inline=True)
         embed.add_field(name="📄 Description", value=description, inline=False)
+        
+        # Log item addition
+        await log_to_channel(
+            title="✨ SHOP ITEM ADDED",
+            description=f"New item **{name}** added to shop",
+            color=PURPLE,
+            user=interaction.user,
+            extra_fields={
+                "💰 Price": f"{sc(price)} ⚓",
+                "📝 Type": item_type,
+                "📦 Emoji": emoji
+            }
+        )
+        
         await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
         embed = discord.Embed(
@@ -776,6 +961,19 @@ async def remove_item(interaction: discord.Interaction, name: str):
         description=f"**{name}** removed from shop",
         color=GREEN
     )
+    
+    # Log item removal
+    await log_to_channel(
+        title="🗑️ SHOP ITEM REMOVED",
+        description=f"Item **{name}** removed from shop",
+        color=RED,
+        user=interaction.user,
+        extra_fields={
+            "📝 Item": name,
+            "⏰ Time": datetime.now().strftime("%H:%M:%S")
+        }
+    )
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="add_role_item", description="[ADMIN] Add custom role to shop")
@@ -797,6 +995,20 @@ async def add_role_item(interaction: discord.Interaction, name: str, price: int,
         embed.add_field(name="💰 Price", value=f"{sc(price)} ⚓", inline=True)
         embed.add_field(name="🎖️ Role", value=role.mention, inline=True)
         embed.add_field(name="📄 Description", value=description, inline=False)
+        
+        # Log role item addition
+        await log_to_channel(
+            title="🎖️ ROLE ITEM ADDED",
+            description=f"New role item **{name}** added to shop",
+            color=PURPLE,
+            user=interaction.user,
+            extra_fields={
+                "💰 Price": f"{sc(price)} ⚓",
+                "🎖️ Role": role.name,
+                "📦 Emoji": emoji
+            }
+        )
+        
         await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
         embed = discord.Embed(title="❌ Item Already Exists", color=RED)
@@ -813,6 +1025,19 @@ async def set_invite_reward(interaction: discord.Interaction, amount: int):
         color=GREEN
     )
     embed.set_footer(text="Updated for all future invites")
+    
+    # Log configuration change
+    await log_to_channel(
+        title="⚙️ CONFIG CHANGE",
+        description=f"Invite reward updated to {sc(amount)} ⚓",
+        color=BLUE,
+        user=interaction.user,
+        extra_fields={
+            "📝 Setting": "invite_reward",
+            "💰 New Value": f"{sc(amount)} ⚓"
+        }
+    )
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="admin_give", description="[ADMIN] Give coins to user")
@@ -825,6 +1050,19 @@ async def admin_give(interaction: discord.Interaction, user: discord.Member, amo
     embed.add_field(name="💰 Amount", value=f"{sc(amount)} ⚓", inline=True)
     embed.add_field(name="📊 New Balance", value=f"{sc(get_user(user.id)[1])} ⚓", inline=True)
     embed.set_thumbnail(url=user.display_avatar.url)
+    
+    # Log admin give
+    await log_to_channel(
+        title="💳 ADMIN GIVE",
+        description=f"Admin {interaction.user.mention} gave coins to {user.mention}",
+        color=GREEN,
+        user=interaction.user,
+        extra_fields={
+            "👤 Recipient": user.mention,
+            "💰 Amount": f"{sc(amount)} ⚓"
+        }
+    )
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="admin_take", description="[ADMIN] Take coins from user")
@@ -839,6 +1077,19 @@ async def admin_take(interaction: discord.Interaction, user: discord.Member, amo
     embed.add_field(name="💰 Amount", value=f"{sc(actual)} ⚓", inline=True)
     embed.add_field(name="📊 New Balance", value=f"{sc(data[1] - actual)} ⚓", inline=True)
     embed.set_thumbnail(url=user.display_avatar.url)
+    
+    # Log admin take
+    await log_to_channel(
+        title="💔 ADMIN TAKE",
+        description=f"Admin {interaction.user.mention} took coins from {user.mention}",
+        color=RED,
+        user=interaction.user,
+        extra_fields={
+            "👤 Target": user.mention,
+            "💰 Amount": f"{sc(actual)} ⚓"
+        }
+    )
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="admin_ban", description="[ADMIN] Ban/unban user")
@@ -850,10 +1101,12 @@ async def admin_ban(interaction: discord.Interaction, user: discord.Member):
         conn.execute("DELETE FROM banned_users WHERE user_id=?", (user.id,))
         msg, emoji = "unbanned", "✅"
         color = GREEN
+        action = "UNBANNED"
     else:
         conn.execute("INSERT INTO banned_users VALUES(?)", (user.id,))
         msg, emoji = "banned", "🚫"
         color = RED
+        action = "BANNED"
     conn.commit()
     conn.close()
     
@@ -863,6 +1116,20 @@ async def admin_ban(interaction: discord.Interaction, user: discord.Member):
         color=color
     )
     embed.set_thumbnail(url=user.display_avatar.url)
+    
+    # Log ban
+    await log_to_channel(
+        title=f"{emoji} USER {action}",
+        description=f"{user.mention} has been {msg}",
+        color=color,
+        user=interaction.user,
+        extra_fields={
+            "👤 Target": user.mention,
+            "📝 Action": action,
+            "⏰ Time": datetime.now().strftime("%H:%M:%S")
+        }
+    )
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="economy_stats", description="[ADMIN] Economy statistics")
@@ -872,6 +1139,7 @@ async def economy_stats(interaction: discord.Interaction):
     s = conn.execute("SELECT COUNT(*), SUM(wallet), SUM(bank), SUM(total_earned) FROM users").fetchone()
     b = conn.execute("SELECT COUNT(*) FROM banned_users").fetchone()[0]
     r = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
+    p = conn.execute("SELECT COUNT(*) FROM shop_purchases").fetchone()[0]
     conn.close()
     
     embed = discord.Embed(title="📊 ECONOMY STATISTICS", color=BLUE)
@@ -881,8 +1149,32 @@ async def economy_stats(interaction: discord.Interaction):
     embed.add_field(name="🏦 In Banks", value=f"{sc(s[2] or 0)} ⚓", inline=True)
     embed.add_field(name="📈 Total Earned", value=f"{sc(s[3] or 0)} ⚓", inline=True)
     embed.add_field(name="🛍️ Items Circulating", value=str(r), inline=True)
+    embed.add_field(name="🛒 Total Purchases", value=str(p), inline=True)
     embed.add_field(name="🏧 Total Circulation", value=f"{sc((s[1] or 0)+(s[2] or 0))} ⚓", inline=False)
     embed.set_footer(text="Real-time data")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="view_logs", description="[ADMIN] View recent activity logs")
+@admin_only()
+async def view_logs(interaction: discord.Interaction):
+    conn = db()
+    purchases = conn.execute("SELECT user_id, item_name, price, timestamp FROM shop_purchases ORDER BY timestamp DESC LIMIT 10").fetchall()
+    conn.close()
+    
+    embed = discord.Embed(title="📋 RECENT SHOP PURCHASES", color=BLUE)
+    
+    if not purchases:
+        embed.description = "No purchases yet"
+    else:
+        for user_id, item_name, price, timestamp in purchases:
+            time_str = datetime.fromtimestamp(timestamp).strftime("%m/%d %H:%M")
+            embed.add_field(
+                name=f"👤 User {user_id}",
+                value=f"**{item_name}** - {sc(price)} ⚓\n*{time_str}*",
+                inline=False
+            )
+    
+    embed.set_footer(text="Last 10 purchases")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1028,6 +1320,19 @@ async def daily(interaction: discord.Interaction):
     conn.commit()
     conn.close()
     
+    # Log daily reward
+    await log_to_channel(
+        title="🌅 DAILY REWARD",
+        description=f"{interaction.user.mention} claimed their daily reward",
+        color=GOLD,
+        user=interaction.user,
+        extra_fields={
+            "💰 Amount": f"{sc(amount)} ⚓",
+            "🔥 Streak": f"{streak} days",
+            "📊 Base": f"{sc(base)} ⚓"
+        }
+    )
+    
     embed = discord.Embed(
         title="🌅 DAILY REWARD CLAIMED!",
         color=GOLD
@@ -1055,6 +1360,17 @@ async def weekly(interaction: discord.Interaction):
     amount = random.randint(1500, 3000)
     add_wallet(uid, amount, "weekly")
     set_cd(uid, "weekly")
+    
+    # Log weekly reward
+    await log_to_channel(
+        title="📅 WEEKLY REWARD",
+        description=f"{interaction.user.mention} claimed their weekly reward",
+        color=GOLD,
+        user=interaction.user,
+        extra_fields={
+            "💰 Amount": f"{sc(amount)} ⚓"
+        }
+    )
     
     embed = discord.Embed(
         title="📅 WEEKLY BONUS!",
@@ -1101,6 +1417,19 @@ async def fish(interaction: discord.Interaction):
         add_wallet(uid, amount, "fishing")
     set_cd(uid, "fish")
     
+    # Log fishing
+    if amount > 0:
+        await log_to_channel(
+            title="🎣 FISHING",
+            description=f"{interaction.user.mention} caught {catch[0]}",
+            color=BLUE,
+            user=interaction.user,
+            extra_fields={
+                "💰 Earned": f"{sc(amount)} ⚓",
+                "🐟 Catch": catch[0]
+            }
+        )
+    
     embed = discord.Embed(title="🎣 FISHING RESULTS!", color=BLUE)
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
     embed.add_field(name="🐟 Caught", value=catch[0], inline=True)
@@ -1139,6 +1468,18 @@ async def mine(interaction: discord.Interaction):
     amount = int(random.randint(find[1], find[2]) * coins * pick)
     add_wallet(uid, amount, "mining")
     set_cd(uid, "mine")
+    
+    # Log mining
+    await log_to_channel(
+        title="⛏️ MINING",
+        description=f"{interaction.user.mention} found {find[0]}",
+        color=0x8B4513,
+        user=interaction.user,
+        extra_fields={
+            "💰 Earned": f"{sc(amount)} ⚓",
+            "💎 Find": find[0]
+        }
+    )
     
     embed = discord.Embed(title="⛏️ MINING RESULTS!", color=0x8B4513)
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1179,6 +1520,18 @@ async def hunt(interaction: discord.Interaction):
     add_wallet(uid, amount, "hunting")
     set_cd(uid, "hunt")
     
+    # Log hunting
+    await log_to_channel(
+        title="🏹 HUNTING",
+        description=f"{interaction.user.mention} hunted {animal[0]}",
+        color=0x228B22,
+        user=interaction.user,
+        extra_fields={
+            "💰 Earned": f"{sc(amount)} ⚓",
+            "🦌 Animal": animal[0]
+        }
+    )
+    
     embed = discord.Embed(title="🏹 HUNT RESULTS!", color=0x228B22)
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
     embed.add_field(name="🦌 Hunted", value=animal[0], inline=True)
@@ -1215,6 +1568,18 @@ async def work(interaction: discord.Interaction):
     amount = int(random.randint(job[1], job[2]) * coins)
     add_wallet(uid, amount, "work")
     set_cd(uid, "work")
+    
+    # Log work
+    await log_to_channel(
+        title="💼 WORK",
+        description=f"{interaction.user.mention} worked as {job[0].split()[0:2]}",
+        color=GREEN,
+        user=interaction.user,
+        extra_fields={
+            "💼 Job": job[0],
+            "💰 Salary": f"{sc(amount)} ⚓"
+        }
+    )
     
     embed = discord.Embed(title="💼 SHIFT COMPLETE!", color=GREEN)
     embed.set_thumbnail(url=interaction.user.display_avatar.url)
@@ -1259,6 +1624,19 @@ async def gamble(interaction: discord.Interaction, amount: str):
         winnings = int(bet * random.uniform(1.2, 2.5) * coins)
         add_wallet(uid, winnings - bet, "gamble_win")
         
+        # Log gamble win
+        await log_to_channel(
+            title="🎰 GAMBLE WIN",
+            description=f"{interaction.user.mention} won at gambling!",
+            color=GREEN,
+            user=interaction.user,
+            extra_fields={
+                "💵 Bet": f"{sc(bet)} ⚓",
+                "🎉 Won": f"{sc(winnings)} ⚓",
+                "💲 Profit": f"+{sc(winnings-bet)} ⚓"
+            }
+        )
+        
         embed = discord.Embed(title="🎰 YOU WON!", color=GREEN)
         embed.add_field(name="💵 Bet", value=f"{sc(bet)} ⚓", inline=True)
         embed.add_field(name="🎉 Won", value=f"{sc(winnings)} ⚓", inline=True)
@@ -1266,6 +1644,18 @@ async def gamble(interaction: discord.Interaction, amount: str):
         embed.set_image(url=get_gif("win"))
     else:
         add_wallet(uid, -bet, "gamble_loss")
+        
+        # Log gamble loss
+        await log_to_channel(
+            title="🎰 GAMBLE LOSS",
+            description=f"{interaction.user.mention} lost at gambling",
+            color=RED,
+            user=interaction.user,
+            extra_fields={
+                "💵 Bet": f"{sc(bet)} ⚓",
+                "😢 Lost": f"{sc(bet)} ⚓"
+            }
+        )
         
         embed = discord.Embed(title="🎰 HOUSE WINS", color=RED)
         embed.add_field(name="💵 Bet", value=f"{sc(bet)} ⚓", inline=True)
@@ -1302,6 +1692,19 @@ async def slots(interaction: discord.Interaction, amount: int):
         m = mults.get(reels[0], 3)
         win = amount * m
         add_wallet(uid, win - amount, "slots_jackpot")
+        
+        # Log jackpot
+        await log_to_channel(
+            title="🎡 SLOTS JACKPOT!",
+            description=f"{interaction.user.mention} hit the jackpot!",
+            color=GOLD,
+            user=interaction.user,
+            extra_fields={
+                "🎰 Reels": display.strip(),
+                "🎉 Won": f"{sc(win)} ⚓",
+                "📊 Multiplier": f"x{m}"
+            }
+        )
         
         embed = discord.Embed(title=f"🎰 JACKPOT!{display}", description=f"🎉 Won {sc(win)} ⚓ (x{m})!", color=GOLD)
         embed.set_image(url=get_gif("win"))
@@ -1397,7 +1800,7 @@ async def highlow(interaction: discord.Interaction, amount: int, guess: str):
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MEMBER COMMANDS - BANKING & TRANSFER
-# ═════════════════════════════════════════════════════════════════��════════════
+# ══════════════════════════════════════════════════════════════════════════════
 
 @bot.tree.command(name="deposit", description="🏦 Deposit coins")
 @app_commands.describe(amount="Amount, or 'all'")
@@ -1418,6 +1821,18 @@ async def deposit(interaction: discord.Interaction, amount: str):
     add_wallet(uid, -dep)
     add_bank(uid, dep)
     
+    # Log deposit
+    await log_to_channel(
+        title="🏦 DEPOSIT",
+        description=f"{interaction.user.mention} deposited coins",
+        color=BLUE,
+        user=interaction.user,
+        extra_fields={
+            "💰 Amount": f"{sc(dep)} ⚓",
+            "🏧 New Bank": f"{sc(data[2] + dep)}/{sc(data[3])} ⚓"
+        }
+    )
+    
     embed = discord.Embed(title="🏦 DEPOSITED!", color=GREEN)
     embed.add_field(name="💰 Amount", value=f"{sc(dep)} ⚓", inline=True)
     embed.add_field(name="🏧 New Balance", value=f"{sc(data[2] + dep)} / {sc(data[3])} ⚓", inline=True)
@@ -1435,6 +1850,18 @@ async def withdraw(interaction: discord.Interaction, amount: str):
     
     add_bank(uid, -wdr)
     add_wallet(uid, wdr)
+    
+    # Log withdrawal
+    await log_to_channel(
+        title="🏦 WITHDRAWAL",
+        description=f"{interaction.user.mention} withdrew coins",
+        color=BLUE,
+        user=interaction.user,
+        extra_fields={
+            "💰 Amount": f"{sc(wdr)} ⚓",
+            "👛 New Wallet": f"{sc(data[1] + wdr)} ⚓"
+        }
+    )
     
     embed = discord.Embed(title="🏦 WITHDRAWN!", color=GREEN)
     embed.add_field(name="💰 Amount", value=f"{sc(wdr)} ⚓", inline=True)
@@ -1462,6 +1889,19 @@ async def transfer(interaction: discord.Interaction, user: discord.Member, amoun
     set_cd(sid, "transfer")
     add_wallet(sid, -amount)
     add_wallet(rid, amount, "transfer")
+    
+    # Log transfer
+    await log_to_channel(
+        title="💸 TRANSFER",
+        description=f"{interaction.user.mention} sent coins to {user.mention}",
+        color=GREEN,
+        user=interaction.user,
+        extra_fields={
+            "📥 From": interaction.user.mention,
+            "📤 To": user.mention,
+            "💰 Amount": f"{sc(amount)} ⚓"
+        }
+    )
     
     embed = discord.Embed(title="💸 TRANSFER COMPLETE!", color=GREEN)
     embed.add_field(name="📤 From", value=interaction.user.mention, inline=True)
