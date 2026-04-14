@@ -47,17 +47,17 @@ ORANGE = 0xFF8C00
 # ─── GIFs ────────────────────────────────────────────────────────────────────
 
 GIFS = {
-    "fish": "https://media.giphy.com/media/13d2jHlSlxklVe/giphy.gif",
+    "fish": "https://klipy.com/gifs/stark-goes-fishing-looking-sad",
     "mine": "https://media.giphy.com/media/l0HlQaQ7Yz7n91uIo/giphy.gif",
     "hunt": "https://media.giphy.com/media/EKDfwJZVU60Za/giphy.gif",
     "work": "https://media.giphy.com/media/l0HlTy9x8FZo0XO1i/giphy.gif",
     "win": "https://media.giphy.com/media/3o6ZtpWzconUG6TdqE/giphy.gif",
     "lose": "https://media.giphy.com/media/l0HlOY9x8FZo0XO1i/giphy.gif",
     "crime": "https://media.giphy.com/media/l0HlDtKPoYJhFtHTe/giphy.gif",
-    "rob": "https://media.giphy.com/media/26uf0EUf6YXklWwgE/giphy.gif",
-    "levelup": "https://media.giphy.com/media/3o6ZtpWzconUG6TdqE/giphy.gif",
-    "treasure": "https://media.giphy.com/media/Nyx6NFlAhJx8Y/giphy.gif",
-    "duel": "https://media.giphy.com/media/l0HlTy9x8FZo0XO1i/giphy.gif",
+    "rob": "https://klipy.com/gifs/nami-nico-robin",
+    "levelup": "https://klipy.com/gifs/goku-dragon-ball-level-up-anime-gif",
+    "treasure": "https://klipy.com/gifs/nami-cat-burglar",
+    "duel": "https://klipy.com/gifs/zoro-zoro-one-piece-7",
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -204,9 +204,9 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO shop VALUES (NULL,?,?,?,?,?,?)", item)
 
     # Default config
-    c.execute("INSERT OR IGNORE INTO config VALUES ('drop_interval_minutes','30')")
+    c.execute("INSERT OR IGNORE INTO config VALUES ('drop_interval_minutes','10')")
     c.execute("INSERT OR IGNORE INTO config VALUES ('drop_min','100')")
-    c.execute("INSERT OR IGNORE INTO config VALUES ('drop_max','500')")
+    c.execute("INSERT OR IGNORE INTO config VALUES ('drop_max','10000')")
 
     conn.commit()
     conn.close()
